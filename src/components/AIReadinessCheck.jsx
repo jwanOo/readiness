@@ -1,0 +1,1466 @@
+import { useState, useRef, useEffect } from "react";
+import { supabase } from '../lib/supabase';
+import { useAuth } from '../contexts/AuthContext';
+import MultiSelectDropdown from './MultiSelectDropdown';
+
+/* ═══════════════════════════════════════════════════════════════
+   COMPLETE ADESSO INDUSTRY MAP (DE + CH)
+   Source: adesso.de/branchen + adesso.ch/branchen
+   ═══════════════════════════════════════════════════════════════ */
+
+const INDUSTRIES = {
+  /* ── CORE adesso industries ────────────────────────────── */
+  insurance: {
+    label: "Versicherungen / Rückversicherungen",
+    icon: "🛡️",
+    color: "#1A5276",
+    gradient: "linear-gradient(135deg, #1A5276 0%, #154360 100%)",
+    desc: "Sach-, Lebens-, Kranken-, Rückversicherung — adesso Kernbranche mit in|sure Ecosphere",
+    country: "DE + CH",
+    priority: "core",
+    specificQuestions: [
+      { section: "SAP & Versicherungssysteme", questions: [
+        { q: "Nutzen Sie SAP FS-CD (Collections & Disbursements) oder SAP FI-CA?", hint: "FS-CD = versicherungsspezifisches Nebenbuch; FI-CA = branchenübergreifend" },
+        { q: "Ist SAP S/4HANA FPSL (Financial Products Subledger) im Einsatz?", hint: "Subledger für IFRS 17 / IFRS 9 Reporting" },
+        { q: "Nutzen Sie adesso in|sure Ecosphere Produkte?", hint: "z. B. in|sure PSLife, in|sure Claims, in|sure Health Claims" },
+        { q: "Welche Bestandsführungssysteme (Policy Administration) sind im Einsatz?", hint: "z. B. msg, Guidewire, in|sure, Eigenentwicklung" },
+      ]},
+      { section: "KI-spezifisch für Versicherungen", questions: [
+        { q: "Setzen Sie KI für Schadenerkennung / Fraud Detection ein?", hint: "z. B. adesso a|advanced fraud management, SAS, eigene Modelle" },
+        { q: "Gibt es KI-basierte Dunkelverarbeitung / Straight-Through Processing?", hint: "Automatische Schadenbearbeitung ohne manuelle Eingriffe" },
+        { q: "Nutzen Sie KI für Underwriting / Risikoprüfung?", hint: "" },
+        { q: "Gibt es KI-gestützte Tarifierung / Pricing-Modelle?", hint: "" },
+        { q: "Setzen Sie KI-Chatbots oder virtuelle Assistenten im Kundenservice ein?", hint: "z. B. für Schadensmeldungen, Vertragsauskunft" },
+        { q: "Nutzen Sie KI für Dokumentenanalyse / OCR bei der Schadenbearbeitung?", hint: "" },
+        { q: "Werden Telematik-Daten (z. B. KFZ) für KI-Modelle genutzt?", hint: "" },
+      ]},
+      { section: "Regulatorik & Compliance", questions: [
+        { q: "Welche Anforderungen aus Solvency II betreffen Ihren KI-Einsatz?", hint: "" },
+        { q: "Wie gehen Sie mit der BaFin-Regulierung zu KI in Versicherungen um?", hint: "VAIT, MaGo, Erklärbarkeit" },
+        { q: "Gibt es Anforderungen an Fairness / Bias-Prüfung bei KI-Modellen?", hint: "z. B. bei Tarifierung, Risikoselektion" },
+      ]},
+    ]
+  },
+  banking: {
+    label: "Banken / Finanzdienstleistungen",
+    icon: "🏦",
+    color: "#2C3E50",
+    gradient: "linear-gradient(135deg, #2C3E50 0%, #1A252F 100%)",
+    desc: "Banken, Asset Management, FinTech, Zahlungsverkehr",
+    country: "DE + CH",
+    priority: "core",
+    specificQuestions: [
+      { section: "SAP-Systemlandschaft Banking", questions: [
+        { q: "Nutzen Sie SAP S/4HANA FPSL (Financial Products Subledger)?", hint: "Nachfolger von SAP Bank Analyzer – Wartungsende Bank Analyzer 2025" },
+        { q: "Ist SAP Payment Engine oder SAP Multi-Bank Connectivity (BTP) im Einsatz?", hint: "SAP Payment Engine = Zahlungsverkehrslösung für Banken" },
+        { q: "Verwenden Sie SAP GRC (Governance, Risk and Compliance)?", hint: "Access Control, Process Control, Risk Management" },
+      ]},
+      { section: "KI-spezifisch für Banking", questions: [
+        { q: "Setzen Sie KI für Fraud Detection / Anti-Money Laundering (AML) ein?", hint: "z. B. SAP, FICO, SAS, eigene Modelle" },
+        { q: "Gibt es KI-basiertes Credit Scoring oder Risikobewertung?", hint: "" },
+        { q: "Nutzen Sie KI im Bereich Regulatory Reporting oder Compliance?", hint: "" },
+        { q: "Werden KI-Chatbots im Kundenservice / Beratung eingesetzt?", hint: "" },
+        { q: "Setzen Sie KI für algorithmisches Trading oder Portfolio-Optimierung ein?", hint: "" },
+        { q: "Nutzen Sie KI für die Analyse von Kundendaten (Next Best Action)?", hint: "" },
+      ]},
+      { section: "Regulatorik", questions: [
+        { q: "Welche regulatorischen Anforderungen gelten für KI (BaFin/FINMA, EBA, MaRisk)?", hint: "Schweiz: FINMA-Rundschreiben, Deutschland: BaFin" },
+        { q: "Gibt es Anforderungen an Erklärbarkeit (Explainable AI / XAI)?", hint: "" },
+      ]},
+    ]
+  },
+  healthcare: {
+    label: "Gesundheitswesen / Health",
+    icon: "🏥",
+    color: "#1ABC9C",
+    gradient: "linear-gradient(135deg, #1ABC9C 0%, #16A085 100%)",
+    desc: "Krankenkassen (GKV/PKV), Kliniken, Kassenärztliche Vereinigungen, Abrechnungszentren",
+    country: "DE + CH",
+    priority: "core",
+    specificQuestions: [
+      { section: "SAP & Gesundheitssysteme", questions: [
+        { q: "Nutzen Sie SAP IS-H (Industry Solution for Healthcare)?", hint: "Patientenmanagement, Aufnahme/Entlassung, Abrechnung, DRG" },
+        { q: "Welches KIS (Krankenhausinformationssystem) ist im Einsatz?", hint: "z. B. SAP IS-H mit i.s.h.med, Cerner, Dedalus ORBIS, Meierhofer" },
+        { q: "Nutzen Sie SAP-Branchenlösungen für Krankenversicherungen?", hint: "z. B. FI-CA für Beitragsabrechnung, Leistungsmanagement" },
+        { q: "Setzen Sie oscare® oder andere GKV-spezifische Branchenlösungen ein?", hint: "oscare® = AOK-Systems-Lösung auf SAP-Basis" },
+      ]},
+      { section: "KI-spezifisch für Gesundheitswesen", questions: [
+        { q: "Nutzen Sie KI für Leistungsprüfung / Abrechnungsanalyse?", hint: "z. B. Betrugserkennung, Plausibilitätsprüfung" },
+        { q: "Gibt es KI-basierte Anwendungen in der Patientenversorgung?", hint: "z. B. Diagnoseunterstützung, Triage, Bildanalyse" },
+        { q: "Setzen Sie KI im Bereich Datenmanagement (Gesundheitsdatennutzungsgesetz) ein?", hint: "" },
+        { q: "Nutzen Sie GenAI für Dokumentation, Arztbriefe oder Kodierung?", hint: "z. B. ICD/OPS-Kodierung, Befundtexte" },
+        { q: "Gibt es KI-Projekte zur Versorgungssteuerung / Population Health Management?", hint: "" },
+      ]},
+      { section: "Compliance & Regulatorik", questions: [
+        { q: "Wie gehen Sie mit der TI (Telematikinfrastruktur) und ePA um?", hint: "Schweiz: EPD (Elektronisches Patientendossier)" },
+        { q: "Welche DiGA / DTx (Digitale Gesundheitsanwendungen) Anforderungen bestehen?", hint: "" },
+        { q: "Wie wird Datenschutz im Gesundheitskontext (§ 203 StGB, DSGVO) sichergestellt?", hint: "Schweiz: DSG, Patientengeheimnis" },
+      ]},
+    ]
+  },
+  automotive: {
+    label: "Automobil / Automotive",
+    icon: "🚗",
+    color: "#E74C3C",
+    gradient: "linear-gradient(135deg, #E74C3C 0%, #C0392B 100%)",
+    desc: "OEMs, Zulieferer, Mobilität, E-Mobility, Connected Car",
+    country: "DE + CH",
+    priority: "core",
+    specificQuestions: [
+      { section: "SAP-Systemlandschaft Automotive", questions: [
+        { q: "Nutzen Sie SAP S/4HANA mit dem Vehicle Management System (VMS)?", hint: "SAP VMS (IS-A-VMS) ist die Branchenlösung für Fahrzeugvertrieb und -management" },
+        { q: "Ist SAP Digital Manufacturing (DM) oder SAP Manufacturing Execution (ME) im Einsatz?", hint: "" },
+        { q: "Verwenden Sie SAP Integrated Business Planning (IBP) für Supply Chain Planning?", hint: "Nachfolger von SAP APO" },
+      ]},
+      { section: "KI-spezifisch für Automotive", questions: [
+        { q: "Setzen Sie KI in der Qualitätssicherung ein (Visual Inspection, SPC)?", hint: "" },
+        { q: "Gibt es KI-basierte Predictive Maintenance für Produktionsanlagen?", hint: "" },
+        { q: "Nutzen Sie KI für Supply Chain Risk Management / Engpassvorhersage?", hint: "" },
+        { q: "Werden KI-Modelle für Demand Forecasting im Aftersales eingesetzt?", hint: "" },
+        { q: "Gibt es KI-Anwendungen im Bereich Connected Car / Telematik?", hint: "" },
+        { q: "Nutzen Sie KI für Variantenkonfiguration oder Engineering?", hint: "" },
+      ]},
+      { section: "Daten & Integration", questions: [
+        { q: "Sind Sie an Catena-X / Manufacturing-X angebunden?", hint: "" },
+        { q: "Wie werden IoT-Daten (Shopfloor, Maschinen, Fahrzeuge) gesammelt?", hint: "" },
+      ]},
+    ]
+  },
+  manufacturing: {
+    label: "Manufacturing Industry",
+    icon: "⚙️",
+    color: "#E67E22",
+    gradient: "linear-gradient(135deg, #E67E22 0%, #D35400 100%)",
+    desc: "Maschinenbau, Anlagenbau, Elektronik, Fertigungsindustrie",
+    country: "DE + CH",
+    priority: "core",
+    specificQuestions: [
+      { section: "SAP-Systemlandschaft Fertigung", questions: [
+        { q: "Nutzen Sie SAP Digital Manufacturing (DM) oder SAP Manufacturing Execution (ME)?", hint: "SAP DM = Cloud-Lösung; SAP ME = On-Premise MES" },
+        { q: "Ist SAP PP/DS oder SAP Integrated Business Planning (IBP) im Einsatz?", hint: "PP/DS = embedded in S/4HANA; IBP = Cloud-basierte Planung" },
+        { q: "Verwenden Sie SAP Plant Maintenance (PM) bzw. S/4HANA Asset Management?", hint: "PM = klassisches Modul; EAM = S/4HANA-Bezeichnung" },
+      ]},
+      { section: "KI-spezifisch für Fertigung", questions: [
+        { q: "Setzen Sie Predictive Maintenance oder Condition Monitoring ein?", hint: "z. B. SAP Asset Performance Management (APM), Azure IoT, eigene ML-Modelle" },
+        { q: "Gibt es KI-basierte Qualitätsprüfung (Visual Inspection, Anomaly Detection)?", hint: "" },
+        { q: "Nutzen Sie KI für Demand Forecasting / Supply Chain Optimization?", hint: "" },
+        { q: "Werden Digital Twins oder Simulationsmodelle eingesetzt?", hint: "" },
+        { q: "Gibt es IoT-/Sensorik-Daten für KI-Anwendungen?", hint: "OPC UA, MQTT, Shopfloor-Daten" },
+      ]},
+      { section: "Daten & Integration", questions: [
+        { q: "Wie werden Maschinendaten aktuell erfasst und verarbeitet?", hint: "" },
+        { q: "Gibt es eine Integration zwischen MES und SAP ERP?", hint: "" },
+      ]},
+    ]
+  },
+  retail: {
+    label: "Handel / Retail",
+    icon: "🛒",
+    color: "#27AE60",
+    gradient: "linear-gradient(135deg, #27AE60 0%, #1E8449 100%)",
+    desc: "Einzelhandel, E-Commerce, Großhandel, Fashion",
+    country: "DE + CH",
+    priority: "core",
+    specificQuestions: [
+      { section: "SAP-Systemlandschaft Handel", questions: [
+        { q: "Nutzen Sie SAP Customer Activity Repository (CAR)?", hint: "Zentrale Plattform für POS-Daten, Omnichannel-Analytics, Demand Forecasting" },
+        { q: "Ist SAP Commerce Cloud oder SAP Emarsys Customer Engagement im Einsatz?", hint: "Commerce Cloud = E-Commerce-Plattform; Emarsys = Marketing Automation" },
+        { q: "Verwenden Sie SAP S/4HANA Retail (Merchandise Mgmt, Allocation)?", hint: "Nachfolger von SAP Retail (IS-R)" },
+      ]},
+      { section: "KI-spezifisch für Handel", questions: [
+        { q: "Setzen Sie KI-basierte Personalisierung im E-Commerce ein?", hint: "Produktempfehlungen, Dynamic Pricing" },
+        { q: "Nutzen Sie KI für Demand Forecasting / Bestandsoptimierung?", hint: "" },
+        { q: "Gibt es KI-gestützte Preisoptimierung (Dynamic Pricing)?", hint: "" },
+        { q: "Werden Chatbots / KI-Assistenten im Kundenservice eingesetzt?", hint: "" },
+        { q: "Nutzen Sie Sentiment-Analyse oder Customer Journey Analytics?", hint: "" },
+      ]},
+      { section: "Daten & Omnichannel", questions: [
+        { q: "Wie werden Omnichannel-Daten (POS, Online, Mobile) zusammengeführt?", hint: "" },
+        { q: "Gibt es ein CDP oder einheitliches Kundenprofil?", hint: "" },
+      ]},
+    ]
+  },
+  energy: {
+    label: "Energiewirtschaft / Utilities",
+    icon: "⚡",
+    color: "#F39C12",
+    gradient: "linear-gradient(135deg, #F39C12 0%, #E67E22 100%)",
+    desc: "Energieversorger, Stadtwerke, Öl & Gas, Erneuerbare",
+    country: "DE + CH",
+    priority: "core",
+    specificQuestions: [
+      { section: "SAP-Systemlandschaft Energie", questions: [
+        { q: "Nutzen Sie SAP IS-U oder bereits SAP S/4HANA Utilities?", hint: "IS-U Wartungsende unter SAP ERP: Ende 2027; Nachfolger: S/4HANA Utilities" },
+        { q: "Ist SAP Asset Performance Management (APM) im Einsatz?", hint: "SAP APM = SaaS-Lösung für Predictive Maintenance und Condition Monitoring" },
+        { q: "Verwenden Sie SAP für Billing / Meter Data Management?", hint: "" },
+      ]},
+      { section: "KI-spezifisch für Energie", questions: [
+        { q: "Setzen Sie KI für Lastprognose (Load Forecasting) ein?", hint: "" },
+        { q: "Gibt es Predictive Maintenance für Netz-Infrastruktur?", hint: "" },
+        { q: "Nutzen Sie KI für Energiehandel oder Preisoptimierung?", hint: "" },
+        { q: "Werden Smart-Meter-Daten mit KI analysiert?", hint: "" },
+        { q: "Gibt es KI-basierte Grid Optimization oder Demand Response?", hint: "" },
+      ]},
+      { section: "Daten & OT-Integration", questions: [
+        { q: "Wie werden IoT-/SCADA-Daten verarbeitet und gespeichert?", hint: "" },
+        { q: "Gibt es eine Integration zwischen OT und IT/SAP?", hint: "" },
+      ]},
+    ]
+  },
+  publicSector: {
+    label: "Öffentliche Verwaltung / Public",
+    icon: "🏛️",
+    color: "#2980B9",
+    gradient: "linear-gradient(135deg, #2980B9 0%, #1F6DA0 100%)",
+    desc: "Behörden, Kommunen, Bildung, Bundesverwaltung",
+    country: "DE + CH",
+    priority: "core",
+    specificQuestions: [
+      { section: "SAP-Systemlandschaft Public", questions: [
+        { q: "Nutzen Sie SAP IS-PS (Public Sector) bzw. S/4HANA Public Sector Management?", hint: "Haushaltsmanagement (PSM), Fonds- und Zuwendungsmanagement" },
+        { q: "Ist SAP PSCD (Public Sector Collections & Disbursements) im Einsatz?", hint: "Steuer-/Gebührenerhebung, Auszahlungen" },
+        { q: "Verwenden Sie SAP SuccessFactors oder SAP HCM für Personal?", hint: "" },
+      ]},
+      { section: "KI-spezifisch für Öffentlichen Sektor", questions: [
+        { q: "Gibt es KI-Pilotprojekte für Bürgerservices (Chatbots, Anträge)?", hint: "" },
+        { q: "Setzen Sie KI für Dokumentenanalyse / Aktenbearbeitung ein?", hint: "" },
+        { q: "Nutzen Sie KI-basierte Betrugserkennung?", hint: "" },
+        { q: "Gibt es KI-gestützte Ressourcenplanung / Budgetoptimierung?", hint: "" },
+      ]},
+      { section: "Souveränität & Compliance", questions: [
+        { q: "Welche Vorgaben gelten bzgl. digitaler Souveränität?", hint: "DE: BSI, IT-Grundschutz, Delos Cloud / CH: Swiss Government Cloud" },
+        { q: "Wie wird der EU AI Act umgesetzt (Hochrisiko-KI)?", hint: "" },
+      ]},
+    ]
+  },
+  lifeSciences: {
+    label: "Life Sciences / Pharma",
+    icon: "💊",
+    color: "#8E44AD",
+    gradient: "linear-gradient(135deg, #8E44AD 0%, #6C3483 100%)",
+    desc: "Pharma, Medizintechnik, Biotech, Chemie",
+    country: "DE + CH",
+    priority: "core",
+    specificQuestions: [
+      { section: "SAP-Systemlandschaft Life Sciences", questions: [
+        { q: "Nutzen Sie SAP S/4HANA mit branchenspezifischen Life-Sciences-Funktionen?", hint: "z. B. Chargenrückverfolgung, Serialisierung, GMP-Prozesse" },
+        { q: "Ist SAP EHS Management (Environment, Health & Safety) im Einsatz?", hint: "Gefahrstoffmanagement, Arbeitssicherheit" },
+        { q: "Nutzen Sie SAP Advanced Track and Trace for Pharmaceuticals (ATTP)?", hint: "Serialisierung gemäß EU FMD / US DSCSA" },
+      ]},
+      { section: "KI-spezifisch für Life Sciences", questions: [
+        { q: "Setzen Sie KI in der Forschung & Entwicklung ein?", hint: "Drug Discovery, Molecular Design" },
+        { q: "Gibt es KI-basierte Qualitätskontrolle in der Produktion?", hint: "PAT, Visual Inspection" },
+        { q: "Nutzen Sie KI für klinische Studien?", hint: "Patient Matching, Adverse Event Detection" },
+        { q: "Werden KI-Modelle für Supply Chain / Cold Chain eingesetzt?", hint: "" },
+      ]},
+      { section: "Validierung & Compliance", questions: [
+        { q: "Wie gehen Sie mit GxP-Validierung von KI-Systemen um?", hint: "CSV/CSA" },
+        { q: "Welche FDA/EMA/Swissmedic-Anforderungen gelten?", hint: "" },
+      ]},
+    ]
+  },
+  /* ── IMPORTANT adesso industries ───────────────────────── */
+  lottery: {
+    label: "Lotteriegesellschaften / Gaming",
+    icon: "🎰",
+    color: "#D4AC0D",
+    gradient: "linear-gradient(135deg, #D4AC0D 0%, #B7950B 100%)",
+    desc: "Staatliche Lotterien, Sportwetten, Glücksspiel — adesso 20+ Jahre Expertise",
+    country: "DE",
+    priority: "important",
+    specificQuestions: [
+      { section: "IT-Systeme Lotterie", questions: [
+        { q: "Welche Lotterie-Kernsysteme (Gaming Platform) sind im Einsatz?", hint: "z. B. adesso-Lösungen, IGT, Scientific Games, Eigenentwicklung" },
+        { q: "Nutzen Sie SAP als ERP-System für die Lotteriegesellschaft?", hint: "" },
+        { q: "Welche Online-/Mobile-Spielplattformen betreiben Sie?", hint: "" },
+      ]},
+      { section: "KI-spezifisch für Lotterie", questions: [
+        { q: "Setzen Sie KI für Spielerschutz / Responsible Gaming ein?", hint: "z. B. Erkennung von problematischem Spielverhalten" },
+        { q: "Nutzen Sie KI-basierte Betrugs- und Manipulationserkennung?", hint: "" },
+        { q: "Gibt es KI für Kundenanalyse / Personalisierung?", hint: "z. B. Spielerprofile, Angebotsoptimierung" },
+        { q: "Setzen Sie KI für Spielscheinerkennung (OCR/Vision) ein?", hint: "z. B. adesso KI-basierte Spielscheinerkennung" },
+        { q: "Werden KI-Chatbots für den Kundenservice genutzt?", hint: "" },
+      ]},
+      { section: "Sicherheit & Regulatorik", questions: [
+        { q: "Sind Sie nach WLA-SCS zertifiziert?", hint: "World Lottery Association Security Control Standard" },
+        { q: "Welche regulatorischen Anforderungen gelten (GlüStV, Landesrecht)?", hint: "" },
+      ]},
+    ]
+  },
+  transport: {
+    label: "Verkehrsbetriebe & Logistik",
+    icon: "🚆",
+    color: "#3498DB",
+    gradient: "linear-gradient(135deg, #3498DB 0%, #2471A3 100%)",
+    desc: "ÖPNV, Bahn, Logistik, Mobility as a Service",
+    country: "DE + CH",
+    priority: "important",
+    specificQuestions: [
+      { section: "SAP & Verkehrssysteme", questions: [
+        { q: "Nutzen Sie SAP Transportation Management (SAP TM)?", hint: "Integriert in S/4HANA für Transportplanung und -ausführung" },
+        { q: "Ist SAP EAM (Enterprise Asset Management) / PM für Fahrzeugflotten im Einsatz?", hint: "Instandhaltungsplanung, Wartungszyklen" },
+        { q: "Verwenden Sie SAP HCM oder SuccessFactors für Personalplanung?", hint: "z. B. Schichtplanung, Einsatzplanung" },
+      ]},
+      { section: "KI-spezifisch für Verkehr & Logistik", questions: [
+        { q: "Setzen Sie KI für Fahrplanoptimierung / Routenplanung ein?", hint: "" },
+        { q: "Gibt es Predictive Maintenance für Fahrzeugflotten?", hint: "" },
+        { q: "Nutzen Sie KI für Fahrgastprognosen / Demand-Planung?", hint: "" },
+        { q: "Werden KI-Chatbots für Kundenservice eingesetzt?", hint: "z. B. Fahrauskunft, Störungsmeldungen" },
+        { q: "Gibt es KI-basierte Anomalieerkennung im Betrieb?", hint: "z. B. Verspätungsanalyse, Störungsprognose" },
+      ]},
+      { section: "Daten & IoT", questions: [
+        { q: "Wie werden Echtzeit-Betriebsdaten erfasst (ITCS, Telematik)?", hint: "" },
+        { q: "Gibt es eine Datenstrategie für Mobility Data / MaaS?", hint: "" },
+      ]},
+    ]
+  },
+  media: {
+    label: "Medien & Entertainment",
+    icon: "🎬",
+    color: "#9B59B6",
+    gradient: "linear-gradient(135deg, #9B59B6 0%, #7D3C98 100%)",
+    desc: "Verlage, Rundfunk, Streaming, Gaming, Digitale Medien",
+    country: "DE + CH",
+    priority: "important",
+    specificQuestions: [
+      { section: "SAP & Mediensysteme", questions: [
+        { q: "Nutzen Sie SAP als ERP-System?", hint: "" },
+        { q: "Welche Content-Management- oder Publishing-Systeme sind im Einsatz?", hint: "" },
+      ]},
+      { section: "KI-spezifisch für Medien", questions: [
+        { q: "Setzen Sie KI für Content-Erstellung / GenAI ein?", hint: "z. B. automatische Texterstellung, Bildgenerierung" },
+        { q: "Nutzen Sie KI für Personalisierung / Recommendation Engines?", hint: "" },
+        { q: "Gibt es KI-basierte Werbe-Optimierung (Ad Tech)?", hint: "Programmatic, Targeting" },
+        { q: "Werden KI-Tools für Medienanalyse / Monitoring eingesetzt?", hint: "" },
+        { q: "Nutzen Sie KI für Automatisierung redaktioneller Workflows?", hint: "" },
+      ]},
+    ]
+  },
+  defense: {
+    label: "Defense / Verteidigung",
+    icon: "🎖️",
+    color: "#566573",
+    gradient: "linear-gradient(135deg, #566573 0%, #2C3E50 100%)",
+    desc: "Streitkräfte, Rüstungsindustrie, Sicherheitsbehörden",
+    country: "DE",
+    priority: "important",
+    specificQuestions: [
+      { section: "SAP Defense-Systeme", questions: [
+        { q: "Nutzen Sie SAP S/4HANA Defense & Security (D&S)?", hint: "Nachfolger der ehemaligen DFPS-Lösung, seit S/4HANA 1909" },
+        { q: "Welche SAP-Module setzen Sie im Verteidigungs-Kontext ein?", hint: "z. B. Materialwirtschaft (MM), Instandhaltung (PM/EAM), Personalwirtschaft (HCM), Finanzen (FI/CO)" },
+        { q: "Nutzen Sie SASPF (die SAP-basierte ERP-Implementierung der Bundeswehr)?", hint: "SASPF = Standard-Anwendungssoftware-Produkt-Familie der Bundeswehr" },
+      ]},
+      { section: "KI-spezifisch für Defense", questions: [
+        { q: "Setzen Sie KI für Predictive Maintenance von Waffensystemen/Fahrzeugen ein?", hint: "z. B. über SAP APM oder eigene ML-Modelle" },
+        { q: "Gibt es KI-basierte Logistik-/Supply-Chain-Optimierung im Einsatz?", hint: "z. B. Ersatzteilprognose, Bestandsoptimierung" },
+        { q: "Nutzen Sie KI für Lagebildanalyse / Informationsauswertung?", hint: "" },
+        { q: "Werden KI-Modelle für Personal- oder Einsatzplanung genutzt?", hint: "" },
+      ]},
+      { section: "Sicherheit & Souveränität", questions: [
+        { q: "Welche Geheimhaltungsstufen gelten für Ihre IT-Systeme?", hint: "VS-NfD, VS-Vertraulich, Geheim, Streng Geheim" },
+        { q: "Welche Anforderungen an IT-Souveränität und Betriebsort bestehen?", hint: "z. B. Betrieb ausschließlich in DE, keine Public-Cloud-Dienste mit US-Jurisdiktion" },
+      ]},
+    ]
+  },
+  /* ── NICHE adesso industries ──────────────────────────── */
+  foodBeverage: {
+    label: "Food & Beverage",
+    icon: "🍽️",
+    color: "#E74C3C",
+    gradient: "linear-gradient(135deg, #D35400 0%, #E74C3C 100%)",
+    desc: "Nahrungs- und Genussmittelindustrie, Lebensmittelproduktion",
+    country: "DE",
+    priority: "niche",
+    specificQuestions: [
+      { section: "KI-spezifisch für Food & Beverage", questions: [
+        { q: "Setzen Sie KI für Demand Forecasting / Absatzplanung ein?", hint: "Besonders relevant wegen Verderblichkeit" },
+        { q: "Gibt es KI-basierte Qualitätskontrolle in der Produktion?", hint: "z. B. Visual Inspection, Sensorik" },
+        { q: "Nutzen Sie KI für Supply Chain Optimization (Frische-Logistik)?", hint: "" },
+        { q: "Werden KI-Modelle für Rezeptoptimierung / Produktentwicklung genutzt?", hint: "" },
+        { q: "Gibt es KI-Anwendungen für Rückverfolgbarkeit / Track & Trace?", hint: "EU-Verordnung, Rückrufmanagement" },
+      ]},
+    ]
+  },
+  construction: {
+    label: "Bauen und Wohnen",
+    icon: "🏗️",
+    color: "#DC7633",
+    gradient: "linear-gradient(135deg, #DC7633 0%, #BA4A00 100%)",
+    desc: "Bauunternehmen, Immobilien, Wohnungswirtschaft, PropTech",
+    country: "DE",
+    priority: "niche",
+    specificQuestions: [
+      { section: "KI-spezifisch für Bau & Immobilien", questions: [
+        { q: "Nutzen Sie BIM (Building Information Modeling) mit KI-Unterstützung?", hint: "" },
+        { q: "Setzen Sie KI für Projektplanung / Kostenprognose ein?", hint: "" },
+        { q: "Gibt es KI-basierte Energieoptimierung von Gebäuden?", hint: "Smart Building, Predictive Energy Management" },
+        { q: "Nutzen Sie KI für die Immobilienbewertung / Marktanalyse?", hint: "" },
+        { q: "Setzen Sie KI im Facility Management ein?", hint: "Predictive Maintenance, Raumbelegung" },
+      ]},
+    ]
+  },
+  tradeFairsSports: {
+    label: "Messegesellschaften & Sports",
+    icon: "🏟️",
+    color: "#16A085",
+    gradient: "linear-gradient(135deg, #16A085 0%, #1ABC9C 100%)",
+    desc: "Messegesellschaften, Sportvereine, Veranstaltungen, Events",
+    country: "DE + CH",
+    priority: "niche",
+    specificQuestions: [
+      { section: "KI-spezifisch für Events & Sports", questions: [
+        { q: "Setzen Sie KI für Besucherprognosen / Kapazitätsplanung ein?", hint: "" },
+        { q: "Nutzen Sie KI für Personalisierung im Ticketing / CRM?", hint: "" },
+        { q: "Gibt es KI-basierte Matchday-Optimierung oder Fan-Engagement?", hint: "" },
+        { q: "Werden KI-Modelle für Revenue Management eingesetzt?", hint: "z. B. dynamische Preisgestaltung für Standflächen oder Tickets" },
+        { q: "Nutzen Sie KI für die Auswertung von Event-Daten / Analytics?", hint: "" },
+      ]},
+    ]
+  },
+  telecom: {
+    label: "Telecom",
+    icon: "📡",
+    color: "#2980B9",
+    gradient: "linear-gradient(135deg, #2980B9 0%, #3498DB 100%)",
+    desc: "Telekommunikation, Netzbetreiber, ISPs — primär Schweiz",
+    country: "CH",
+    priority: "niche",
+    specificQuestions: [
+      { section: "KI-spezifisch für Telekommunikation", questions: [
+        { q: "Setzen Sie KI für Network Performance Monitoring / Optimierung ein?", hint: "" },
+        { q: "Gibt es KI-basierte Predictive Maintenance für Netzinfrastruktur?", hint: "" },
+        { q: "Nutzen Sie KI für Churn Prediction / Kundenbindung?", hint: "" },
+        { q: "Werden KI-Chatbots im Kundenservice eingesetzt?", hint: "" },
+        { q: "Gibt es KI-gestützte Anomalieerkennung / Fraud Detection?", hint: "" },
+        { q: "Nutzen Sie KI für die Netzplanung (5G Rollout, Kapazität)?", hint: "" },
+      ]},
+    ]
+  },
+  professionalServices: {
+    label: "Professional Services",
+    icon: "💼",
+    color: "#7D3C98",
+    gradient: "linear-gradient(135deg, #7D3C98 0%, #6C3483 100%)",
+    desc: "Beratung, Wirtschaftsprüfung, Rechtsberatung, IT-Dienstleistungen — adesso bc Fokusbranche",
+    country: "DE + CH",
+    priority: "important",
+    specificQuestions: [
+      { section: "SAP-Systemlandschaft Professional Services", questions: [
+        { q: "Nutzen Sie SAP S/4HANA Cloud (Public oder Private Edition)?", hint: "Public Edition = SaaS; Private Edition = managed Cloud" },
+        { q: "Ist SAP Professional Services Cloud oder SAP PS (Projektsystem) im Einsatz?", hint: "Projektplanung, Zeitrückmeldung, Fakturierung" },
+        { q: "Verwenden Sie SAP SuccessFactors für Talent Management?", hint: "Recruiting, Learning, Performance, Employee Central" },
+      ]},
+      { section: "KI-spezifisch für Professional Services", questions: [
+        { q: "Setzen Sie KI für Ressourcenplanung / Skill-basiertes Staffing ein?", hint: "" },
+        { q: "Nutzen Sie KI für Projektprognosen (Budget, Zeitpläne, Risiken)?", hint: "" },
+        { q: "Gibt es KI-basierte Angebotsoptimierung / Pricing?", hint: "" },
+        { q: "Setzen Sie GenAI für Dokumentenerstellung oder Wissensmanagement ein?", hint: "z. B. Angebotserstellung, Vertragstexte, interne Wissensdatenbank" },
+        { q: "Nutzen Sie KI für Zeiterfassung oder Automatisierung administrativer Prozesse?", hint: "" },
+      ]},
+    ]
+  },
+  chemical: {
+    label: "Chemie / Process Industries",
+    icon: "🧪",
+    color: "#117A65",
+    gradient: "linear-gradient(135deg, #117A65 0%, #0E6655 100%)",
+    desc: "Chemie, Prozessindustrie, Grundstoffe — adesso bc SAP Diamond Partner",
+    country: "DE + CH",
+    priority: "important",
+    specificQuestions: [
+      { section: "SAP-Systemlandschaft Chemie", questions: [
+        { q: "Nutzen Sie SAP S/4HANA mit Prozessfertigung (PP-PI)?", hint: "Rezepturverwaltung, Chargenmanagement, Prozessaufträge" },
+        { q: "Ist SAP EHS Management (Environment, Health & Safety) im Einsatz?", hint: "Gefahrstoffmanagement, SDB-Erstellung, Arbeitssicherheit" },
+        { q: "Verwenden Sie SAP Responsible Design and Production?", hint: "Nachhaltigkeitsreporting, Circular Economy, Carbon Footprint" },
+      ]},
+      { section: "KI-spezifisch für Chemie / Prozessindustrie", questions: [
+        { q: "Setzen Sie KI für Prozessoptimierung in der Produktion ein?", hint: "z. B. Yield Optimization, Rezepturoptimierung" },
+        { q: "Gibt es KI-basierte Predictive Maintenance für Produktionsanlagen?", hint: "" },
+        { q: "Nutzen Sie KI für Demand Forecasting / S&OP?", hint: "" },
+        { q: "Werden KI-Modelle für Qualitätssicherung / Labor (LIMS-Integration) eingesetzt?", hint: "" },
+        { q: "Gibt es KI-Anwendungen für ESG-Reporting oder Emissionsmanagement?", hint: "" },
+      ]},
+    ]
+  },
+};
+
+const CORE_SECTIONS = [
+  {
+    id: "general",
+    title: "📋 Allgemeine Informationen",
+    questions: [
+      { q: "Kundenname", hint: "", type: "text" },
+      { q: "Ansprechpartner", hint: "", type: "text" },
+      { q: "E-Mail", hint: "", type: "text" },
+      { q: "Berater (intern)", hint: "", type: "text" },
+    ]
+  },
+  {
+    id: "landscape",
+    title: "💻 SAP-Systemlandschaft",
+    questions: [
+      { q: "Welche SAP-Systeme setzen Sie aktuell ein?", hint: "z. B. S/4HANA, ECC, BW/4HANA, SuccessFactors, Ariba, CX" },
+      { q: "Welche SAP-Release-Version nutzen Sie?", hint: "z. B. S/4HANA 2023 FPS02, ECC 6.0 EHP8" },
+      { q: "On-Premise, Private Cloud oder Public Cloud (RISE/GROW)?", hint: "" },
+      { q: "Welche Datenbank setzen Sie ein?", hint: "z. B. SAP HANA, HANA Cloud, Oracle, SQL Server" },
+      { q: "Planen Sie eine Migration zu S/4HANA oder RISE with SAP?", hint: "" },
+      { q: "Verfolgen Sie eine Clean-Core-Strategie?", hint: "Clean Core = Minimierung von Z-/Y-Custom Code zugunsten von BTP-Extensions und Standard" },
+    ]
+  },
+  {
+    id: "licensing",
+    title: "📝 Lizenzierung",
+    questions: [
+      { q: "Welche SAP-Lizenzmodelle haben Sie?", hint: "Named User, Digital Access, Engine-based" },
+      { q: "Verfügen Sie über SAP AI-spezifische Lizenzen?", hint: "SAP Business AI (inkl. Joule), SAP AI Core, SAP AI Launchpad" },
+      { q: "Haben Sie Zugang zu SAP AI Core / AI Launchpad?", hint: "" },
+      { q: "Lizenzierungen für SAP Analytics Cloud?", hint: "Planning, BI, oder beides?" },
+    ]
+  },
+  {
+    id: "btp",
+    title: "☁️ SAP BTP",
+    questions: [
+      { q: "Nutzen Sie SAP BTP?", hint: "Ja / Nein / In Planung" },
+      { q: "Welche BTP-Services sind im Einsatz?", hint: "Integration Suite, AI Core, Datasphere, Build Apps" },
+      { q: "BTP-Lizenzmodell?", hint: "CPEA (Cloud Platform Enterprise Agreement), Subscription, BTPEA" },
+      { q: "Nutzen Sie SAP Datasphere?", hint: "Nachfolger von SAP Data Warehouse Cloud und SAP Data Intelligence" },
+      { q: "Ist SAP Business Data Cloud (BDC) im Einsatz oder geplant?", hint: "Managed SaaS für SAP-Datenstandardisierung — Basis für SAP Business AI" },
+    ]
+  },
+  {
+    id: "cloud",
+    title: "🌐 Cloud & Integration",
+    questions: [
+      { q: "Welche SAP Cloud-Produkte nutzen Sie?", hint: "SuccessFactors, S/4HANA Cloud, Ariba, Concur, SAC" },
+      { q: "Welche Hyperscaler nutzen Sie?", hint: "AWS, Azure, GCP" },
+      { q: "Cloud-Strategie?", hint: "Cloud-first, Hybrid, Multi-Cloud?" },
+    ]
+  },
+  {
+    id: "aiSap",
+    title: "🤖 KI im SAP-Umfeld",
+    questions: [
+      { q: "Nutzen Sie bereits KI-Funktionen innerhalb von SAP?", hint: "Intelligent RPA, Predictive Analytics, Cash Application" },
+      { q: "Ist SAP Joule aktiviert oder geplant?", hint: "" },
+      { q: "SAP Signavio mit KI-Funktionen?", hint: "" },
+    ]
+  },
+  {
+    id: "aiNonSap",
+    title: "🧠 Non-SAP KI",
+    questions: [
+      { q: "Welche Non-SAP KI-Tools setzen Sie ein?", hint: "Microsoft Copilot, ChatGPT, Azure OpenAI, AWS Bedrock" },
+      { q: "Eigene ML-Modelle / Data-Science-Plattformen?", hint: "Databricks, Python/R, Snowflake" },
+      { q: "Low-Code/No-Code KI-Tools?", hint: "Power Platform AI Builder, UiPath" },
+    ]
+  },
+  {
+    id: "data",
+    title: "📊 Datengrundlage",
+    questions: [
+      { q: "Qualität Ihrer Stamm- und Bewegungsdaten?", hint: "Sehr gut / Gut / Ausbaufähig / Kritisch" },
+      { q: "Datenstrategie / Data Governance vorhanden?", hint: "" },
+      { q: "Zentrales Data Warehouse / Data Lake?", hint: "" },
+    ]
+  },
+  {
+    id: "security",
+    title: "🔐 Compliance & Governance",
+    questions: [
+      { q: "KI-Richtlinie (AI Policy) vorhanden?", hint: "" },
+      { q: "DSGVO im Kontext von KI?", hint: "Schweiz: DSG" },
+      { q: "Anforderungen EU AI Act?", hint: "" },
+      { q: "Dürfen Daten in externen KI-Diensten verarbeitet werden?", hint: "" },
+    ]
+  },
+  {
+    id: "org",
+    title: "👥 Organisation & Kompetenzen",
+    questions: [
+      { q: "Dediziertes KI-/Data-Science-Team?", hint: "" },
+      { q: "Wer treibt KI strategisch voran?", hint: "CIO, CDO, Innovation Team" },
+      { q: "KI-Kompetenz Ihrer Teams?", hint: "Einsteiger / Fortgeschritten / Experte" },
+    ]
+  },
+  {
+    id: "useCases",
+    title: "🎯 Use Cases & Priorisierung",
+    questions: [
+      { q: "Konkrete KI-Use-Cases identifiziert / umgesetzt?", hint: "" },
+      { q: "Größtes KI-Potenzial in welchem Bereich?", hint: "" },
+      { q: "Budget für KI-Initiativen?", hint: "< 50k, 50–200k, 200k–1M, > 1M EUR/CHF" },
+      { q: "Zeithorizont?", hint: "Kurzfristig / Mittelfristig / Langfristig" },
+    ]
+  },
+];
+
+// ── AI READINESS SCORING ──
+function computeReadinessFromAnswers(answers) {
+  const val = (sId, qi) => (answers[`${sId}_${qi}`] || "").toLowerCase().trim();
+
+  let sap = 20;
+  const ls = (qi) => val("landscape", qi);
+  if (/s\/4|s4|hana|rise|grow/i.test(ls(0)+ls(1)+ls(2))) sap += 18;
+  if (/cloud|rise|grow|public/i.test(ls(2))) sap += 14;
+  if (/hana/i.test(ls(3))) sap += 8;
+  if (/ja|yes|plan/i.test(ls(4))) sap += 5;
+  if (/clean.?core|ja|yes/i.test(ls(5))) sap += 15;
+  if (/ja|yes|aktiv|nutz/i.test(val("aiSap",0))) sap += 10;
+  if (/ja|yes|aktiv|plan/i.test(val("aiSap",1))) sap += 10;
+  sap = Math.min(100, sap);
+
+  let btp = 10;
+  if (/ja|yes|nutz/i.test(val("btp",0))) btp += 22;
+  if (/ai.?core|integration|datasphere|build/i.test(val("btp",1))) btp += 15;
+  if (/cpea|btpea|subscription/i.test(val("btp",2))) btp += 10;
+  if (/ja|yes|nutz|plan/i.test(val("btp",3))) btp += 10;
+  if (/ja|yes|nutz|plan/i.test(val("btp",4))) btp += 10;
+  if (/ja|yes|ai|joule|core/i.test(val("licensing",1))) btp += 13;
+  if (/ja|yes/i.test(val("licensing",2))) btp += 10;
+  btp = Math.min(100, btp);
+
+  let data = 10;
+  if (/sehr gut|excellent/i.test(val("data",0))) data += 30;
+  else if (/gut|good/i.test(val("data",0))) data += 20;
+  else if (/ausbau|moderate/i.test(val("data",0))) data += 10;
+  if (/ja|yes|vorhanden/i.test(val("data",1))) data += 25;
+  if (/ja|yes|bw|datasphere|lake|warehouse|snowflake/i.test(val("data",2))) data += 20;
+  if (val("aiNonSap",0).length > 5) data += 8;
+  if (val("aiNonSap",1).length > 5) data += 7;
+  data = Math.min(100, data);
+
+  return { sap, btp, data };
+}
+
+const GaugeMeter = ({ value, label, sublabel }) => {
+  const c = Math.max(0, Math.min(100, value));
+  // Semicircle: left (0%) → top (50%) → right (100%)
+  // θ = π at 0%, π/2 at 50%, 0 at 100%
+  const theta = Math.PI * (1 - c / 100);
+  const r = 78, cx = 100, cy = 92;
+  const nLen = r - 14;
+  const nx = cx + nLen * Math.cos(theta);
+  const ny = cy - nLen * Math.sin(theta); // minus because SVG y is inverted
+  const col = c >= 66 ? "#27AE60" : c >= 33 ? "#F39C12" : "#E74C3C";
+  const lbl = c >= 66 ? "AI-Ready ✓" : c >= 33 ? "Teilweise bereit" : "Nicht bereit";
+  const uid = label.replace(/\s/g,"");
+  return (
+    <div style={{textAlign:"center",flex:1,minWidth:170}}>
+      <svg viewBox="0 0 200 128" style={{width:"100%",maxWidth:210}}>
+        <defs>
+          <linearGradient id={`grd${uid}`} x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor="#E74C3C"/><stop offset="40%" stopColor="#F39C12"/>
+            <stop offset="70%" stopColor="#F1C40F"/><stop offset="100%" stopColor="#27AE60"/>
+          </linearGradient>
+        </defs>
+        <path d={`M ${cx-r} ${cy} A ${r} ${r} 0 0 1 ${cx+r} ${cy}`} fill="none" stroke="#E8EDF2" strokeWidth="16" strokeLinecap="round"/>
+        <path d={`M ${cx-r} ${cy} A ${r} ${r} 0 0 1 ${cx+r} ${cy}`} fill="none" stroke={`url(#grd${uid})`} strokeWidth="16" strokeLinecap="round"/>
+        {[0,25,50,75,100].map(t=>{
+          const tt=Math.PI*(1-t/100);
+          const x1=cx+(r+11)*Math.cos(tt);const y1=cy-(r+11)*Math.sin(tt);
+          const x2=cx+(r+15)*Math.cos(tt);const y2=cy-(r+15)*Math.sin(tt);
+          return <line key={t} x1={x1} y1={y1} x2={x2} y2={y2} stroke="#BDC3C7" strokeWidth="1.5"/>;
+        })}
+        <line x1={cx} y1={cy} x2={nx} y2={ny} stroke={col} strokeWidth="3" strokeLinecap="round"/>
+        <circle cx={cx} cy={cy} r="6" fill={col}/><circle cx={cx} cy={cy} r="3" fill="#fff"/>
+        <text x={cx} y={cy+22} textAnchor="middle" fontSize="20" fontWeight="800" fontFamily="Outfit" fill={col}>{c}%</text>
+      </svg>
+      <div style={{fontSize:13,fontWeight:700,color:"#1B3A5C",marginTop:2}}>{label}</div>
+      <div style={{fontSize:11,fontWeight:600,color:col,marginTop:2}}>{lbl}</div>
+      {sublabel&&<div style={{fontSize:10,color:"#95A5A6",marginTop:2}}>{sublabel}</div>}
+    </div>
+  );
+};
+
+// ── EXPORT FUNCTIONS ──
+function buildExportHTML(allSections, answers, industry, rd, format) {
+  const overall = Math.round((rd.sap + rd.btp + rd.data) / 3);
+  const gaugeColor = (v) => v >= 66 ? "#27AE60" : v >= 33 ? "#F39C12" : "#E74C3C";
+  const gaugeLabel = (v) => v >= 66 ? "AI-Ready ✓" : v >= 33 ? "Teilweise bereit" : "Nicht bereit";
+  const barHTML = (val, label, sub) => {
+    const c = gaugeColor(val);
+    return `<div style="flex:1;min-width:180px;text-align:center;padding:12px;">
+      <div style="font-size:13px;font-weight:700;color:#1B3A5C;margin-bottom:8px;">${label}</div>
+      <div style="background:#E8EDF2;border-radius:8px;height:20px;overflow:hidden;position:relative;margin:0 auto;max-width:200px;">
+        <div style="background:${c};height:100%;width:${val}%;border-radius:8px;transition:width 0.3s;"></div>
+        <div style="position:absolute;top:0;left:0;right:0;text-align:center;font-size:12px;font-weight:700;color:#fff;line-height:20px;">${val}% — ${gaugeLabel(val)}</div>
+      </div>
+      <div style="font-size:10px;color:#7F8C8D;margin-top:4px;">${sub}</div>
+    </div>`;
+  };
+  const overallColor = gaugeColor(overall);
+
+  const wordMeta = format === "word" ? `
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <meta name="ProgId" content="Word.Document">
+    <meta name="Generator" content="adesso AI Readiness Check">
+    <!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View></w:WordDocument></xml><![endif]-->` : "";
+
+  return `<!DOCTYPE html>
+<html lang="de"><head><meta charset="utf-8"><title>SAP AI Readiness Check — ${industry?.label || "Allgemein"}</title>${wordMeta}
+<style>
+  @page { size: A4; margin: 20mm 18mm; }
+  body { font-family: Calibri, Arial, Helvetica, sans-serif; color: #1B3A5C; font-size: 11pt; line-height: 1.5; margin: 0; padding: 20px; }
+  h1 { font-size: 22pt; color: #1B3A5C; border-bottom: 3px solid #2E86C1; padding-bottom: 8px; margin: 0 0 6px 0; }
+  h2 { font-size: 14pt; color: #2E86C1; margin: 20px 0 8px 0; page-break-after: avoid; }
+  h3 { font-size: 12pt; color: #1B3A5C; margin: 14px 0 6px 0; }
+  .meta { color: #7F8C8D; font-size: 10pt; margin-bottom: 16px; }
+  .assessment { background: #F7F9FC; border: 2px solid #D5D8DC; border-radius: 8px; padding: 16px; margin: 16px 0 24px 0; page-break-inside: avoid; }
+  .gauges { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin: 12px 0; }
+  .overall { text-align: center; padding: 12px; border-radius: 8px; margin-top: 12px; }
+  .section { margin-bottom: 16px; page-break-inside: avoid; }
+  .section-header { background: #1B3A5C; color: white; padding: 8px 12px; font-weight: 700; font-size: 11pt; border-radius: 4px 4px 0 0; }
+  .section-header.industry { background: ${industry?.color || "#2E86C1"}; }
+  table { width: 100%; border-collapse: collapse; margin: 0; }
+  td, th { border: 1px solid #D5D8DC; padding: 7px 10px; font-size: 10pt; vertical-align: top; }
+  th { background: #E8EDF2; font-weight: 600; text-align: left; width: 45%; }
+  td { background: #FAFBFC; }
+  .empty { color: #BDC3C7; font-style: italic; }
+  .footer { margin-top: 24px; text-align: center; color: #95A5A6; font-size: 9pt; border-top: 1px solid #E8EDF2; padding-top: 10px; }
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 9pt; font-weight: 700; }
+  .rec { font-size: 10pt; margin: 4px 0; padding: 4px 8px; border-radius: 4px; }
+  .rec.red { background: #FDEDEC; color: #E74C3C; }
+  .rec.yellow { background: #FEF9E7; color: #B7950B; }
+  .rec.green { background: #EAFAF1; color: #1E8449; }
+</style></head><body>
+
+<h1>${industry?.icon || "🤖"} SAP AI Readiness Check</h1>
+<div class="meta">
+  Branche: <strong>${industry?.label || "Allgemein"}</strong> &nbsp;|&nbsp;
+  Datum: <strong>${new Date().toLocaleDateString("de-DE")}</strong> &nbsp;|&nbsp;
+  Beantwortet: <strong>${Object.values(answers).filter(v => v?.trim()).length} / ${allSections.reduce((s, sec) => s + sec.questions.length, 0)}</strong>
+</div>
+
+<div class="assessment">
+  <h2 style="margin-top:0;border:none;">🎯 AI Readiness Assessment</h2>
+  <div class="gauges">
+    ${barHTML(rd.sap, "SAP System", "S/4HANA, Clean Core, Joule")}
+    ${barHTML(rd.btp, "BTP & AI Platform", "AI Core, Datasphere, BDC")}
+    ${barHTML(rd.data, "Datenreife", "Qualität, Governance, DWH")}
+  </div>
+  <div class="overall" style="background:${overall >= 66 ? "#EAFAF1" : overall >= 33 ? "#FEF9E7" : "#FDEDEC"};border:1.5px solid ${overallColor}40;">
+    <div style="font-size:10pt;color:#5D6D7E;">Gesamtbewertung</div>
+    <div style="font-size:22pt;font-weight:800;color:${overallColor};">${overall}%</div>
+    <div style="font-size:10pt;color:${overallColor};font-weight:600;">
+      ${overall >= 66 ? "Gut für SAP Business AI aufgestellt" : overall >= 33 ? "Grundlagen vorhanden — gezielte Maßnahmen empfohlen" : "Erheblicher Handlungsbedarf vor KI-Einführung"}
+    </div>
+  </div>
+  <div style="margin-top:10px;">
+    <strong style="font-size:10pt;">Empfehlungen:</strong>
+    ${rd.sap < 33 ? '<div class="rec red">⚠️ SAP-System: Migration auf S/4HANA und Clean-Core-Strategie empfohlen</div>' : ""}
+    ${rd.btp < 33 ? '<div class="rec red">⚠️ BTP: SAP BTP mit AI Core und CPEA/BTPEA-Lizenzierung erforderlich</div>' : ""}
+    ${rd.data < 33 ? '<div class="rec red">⚠️ Daten: Datenstrategie, Data Governance und zentrales DWH aufbauen</div>' : ""}
+    ${rd.sap >= 33 && rd.sap < 66 ? '<div class="rec yellow">💡 SAP: Joule aktivieren und Clean-Core-Strategie vorantreiben</div>' : ""}
+    ${rd.btp >= 33 && rd.btp < 66 ? '<div class="rec yellow">💡 BTP: SAP AI Core und SAP Business Data Cloud evaluieren</div>' : ""}
+    ${rd.data >= 33 && rd.data < 66 ? '<div class="rec yellow">💡 Daten: Data Governance stärken und SAP Datasphere einführen</div>' : ""}
+    ${rd.sap >= 66 ? '<div class="rec green">✅ SAP-System ist AI-ready</div>' : ""}
+    ${rd.btp >= 66 ? '<div class="rec green">✅ BTP & AI Platform sind einsatzbereit</div>' : ""}
+    ${rd.data >= 66 ? '<div class="rec green">✅ Datenreife unterstützt KI-Initiativen</div>' : ""}
+  </div>
+</div>
+
+${allSections.map(s => `
+  <div class="section">
+    <div class="section-header${s.isIndustry ? " industry" : ""}">${s.title}${s.isIndustry ? ' <span class="tag" style="background:rgba(255,255,255,0.3);color:white;margin-left:8px;">Branchenspezifisch</span>' : ""}</div>
+    <table>
+      ${s.questions.map((q, qi) => {
+        const ans = answers[`${s.id}_${qi}`];
+        return `<tr>
+          <th>${q.q}${q.hint ? `<br><span style="font-weight:400;color:#95A5A6;font-size:9pt;">${q.hint}</span>` : ""}</th>
+          <td${!ans?.trim() ? ' class="empty"' : ""}>${ans?.trim() || "— nicht beantwortet —"}</td>
+        </tr>`;
+      }).join("")}
+    </table>
+  </div>
+`).join("")}
+
+<div class="footer">
+  SAP AI Readiness Check — erstellt mit adesso AI Readiness Check Tool — ${new Date().toLocaleDateString("de-DE")} — VERTRAULICH
+</div>
+</body></html>`;
+}
+
+function exportToWord(allSections, answers, industry, rd) {
+  const html = buildExportHTML(allSections, answers, industry, rd, "word");
+  const blob = new Blob(["\ufeff", html], { type: "application/msword" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `AI_Readiness_Check_${(industry?.label || "Allgemein").replace(/[^a-zA-Z0-9äöüÄÖÜß]/g, "_")}_${new Date().toISOString().slice(0,10)}.doc`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function exportToPDF(allSections, answers, industry, rd) {
+  const html = buildExportHTML(allSections, answers, industry, rd, "pdf");
+  const printWin = window.open("", "_blank", "width=900,height=700");
+  if (!printWin) { alert("Bitte erlauben Sie Pop-ups für den PDF-Export."); return; }
+  printWin.document.write(html);
+  printWin.document.close();
+  setTimeout(() => {
+    printWin.focus();
+    printWin.print();
+  }, 600);
+}
+
+// ───────── UI COMPONENTS ─────────
+
+const AnimBG = () => (
+  <div style={{position:"fixed",inset:0,zIndex:0,overflow:"hidden",pointerEvents:"none"}}>
+    <div style={{position:"absolute",top:"-20%",right:"-10%",width:"600px",height:"600px",borderRadius:"50%",background:"radial-gradient(circle, rgba(30,60,114,0.06) 0%, transparent 70%)",animation:"f1 20s ease-in-out infinite"}}/>
+    <div style={{position:"absolute",bottom:"-15%",left:"-5%",width:"500px",height:"500px",borderRadius:"50%",background:"radial-gradient(circle, rgba(46,134,193,0.05) 0%, transparent 70%)",animation:"f2 25s ease-in-out infinite"}}/>
+    <style>{`
+      @keyframes f1{0%,100%{transform:translate(0,0)}50%{transform:translate(-40px,30px)}}
+      @keyframes f2{0%,100%{transform:translate(0,0)}50%{transform:translate(30px,-40px)}}
+    `}</style>
+  </div>
+);
+
+const Toggle = ({ on, onToggle, color = "#2E86C1" }) => (
+  <div onClick={onToggle} style={{width:42,height:22,borderRadius:11,background:on?color:"#D5D8DC",position:"relative",cursor:"pointer",transition:"all 0.3s",flexShrink:0}}>
+    <div style={{width:18,height:18,borderRadius:9,background:"#fff",position:"absolute",top:2,left:on?22:2,transition:"all 0.3s",boxShadow:"0 1px 3px rgba(0,0,0,0.2)"}}/>
+  </div>
+);
+
+export default function AIReadinessCheck({ 
+  assessment = null,  // Existing assessment object from database
+  onSave = null,      // Callback when assessment is saved
+  onBack = null,      // Callback to go back to dashboard
+}) {
+  const { user } = useAuth() || {};
+  
+  // If we have an existing assessment, start at "fill" step with pre-selected industry
+  const [step, setStep] = useState(assessment ? "fill" : "select");
+  const [selectedIndustry, setSelectedIndustry] = useState(assessment?.industry || null);
+  const [hovered, setHovered] = useState(null);
+  const [answers, setAnswers] = useState({});
+  const [activeSection, setActiveSection] = useState(0);
+  const [exportDone, setExportDone] = useState(false);
+  const [showIndQ, setShowIndQ] = useState(true);
+  const [enabledCore, setEnabledCore] = useState(CORE_SECTIONS.reduce((a,s)=>({...a,[s.id]:true}),{}));
+  const [countryFilter, setCountryFilter] = useState("all"); // all, DE, CH
+  const [priorityFilter, setPriorityFilter] = useState("all"); // all, core, important, niche
+  const [saving, setSaving] = useState(false);
+  const [lastSaved, setLastSaved] = useState(null);
+  const [collaborators, setCollaborators] = useState([]);
+  const [sectionAssignments, setSectionAssignments] = useState({});
+  const contentRef = useRef(null);
+  const saveTimeoutRef = useRef(null);
+
+  // Load existing answers when assessment is provided
+  useEffect(() => {
+    if (assessment?.id) {
+      loadAnswers(assessment.id);
+      loadSectionAssignments(assessment.id);
+      loadCollaborators();
+    }
+  }, [assessment?.id]);
+
+  // Auto-save answers with debounce
+  useEffect(() => {
+    if (assessment?.id && Object.keys(answers).length > 0) {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+      saveTimeoutRef.current = setTimeout(() => {
+        saveAnswers();
+      }, 2000); // Auto-save after 2 seconds of inactivity
+    }
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, [answers]);
+
+  const loadAnswers = async (assessmentId) => {
+    try {
+      const { data, error } = await supabase
+        .from('answers')
+        .select('*')
+        .eq('assessment_id', assessmentId);
+
+      if (error) throw error;
+
+      // Convert array of answers to object format
+      const answersObj = {};
+      data?.forEach(ans => {
+        answersObj[`${ans.section_id}_${ans.question_index}`] = ans.answer;
+      });
+      setAnswers(answersObj);
+    } catch (error) {
+      console.error('Error loading answers:', error);
+    }
+  };
+
+  const loadSectionAssignments = async (assessmentId) => {
+    try {
+      const { data, error } = await supabase
+        .from('section_assignments')
+        .select(`
+          *,
+          profiles:assigned_to (id, full_name, email)
+        `)
+        .eq('assessment_id', assessmentId);
+
+      if (error) throw error;
+
+      // Convert to object keyed by section_id
+      // Parse assignees from JSON string if stored that way
+      const assignmentsObj = {};
+      data?.forEach(assignment => {
+        // Try to parse assignees_json if it exists, otherwise use assigned_to as single assignee
+        let assignees = [];
+        if (assignment.assignees_json) {
+          try {
+            assignees = JSON.parse(assignment.assignees_json);
+          } catch (e) {
+            assignees = assignment.assigned_to ? [assignment.assigned_to] : [];
+          }
+        } else if (assignment.assigned_to) {
+          assignees = [assignment.assigned_to];
+        }
+        
+        assignmentsObj[assignment.section_id] = {
+          ...assignment,
+          assignees: assignees,
+        };
+      });
+      setSectionAssignments(assignmentsObj);
+    } catch (error) {
+      console.error('Error loading section assignments:', error);
+    }
+  };
+
+  const loadCollaborators = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, full_name, email')
+        .limit(50);
+
+      if (error) throw error;
+      setCollaborators(data || []);
+    } catch (error) {
+      console.error('Error loading collaborators:', error);
+    }
+  };
+
+  const saveAnswers = async () => {
+    if (!assessment?.id || !user?.id) return;
+
+    setSaving(true);
+    try {
+      // Convert answers object to array for upsert
+      const answersArray = Object.entries(answers).map(([key, value]) => {
+        const [sectionId, questionIndex] = key.split('_');
+        return {
+          assessment_id: assessment.id,
+          section_id: sectionId,
+          question_index: parseInt(questionIndex),
+          answer: value,
+          answered_by: user.id,
+          answered_at: new Date().toISOString(),
+        };
+      }).filter(a => a.answer?.trim()); // Only save non-empty answers
+
+      if (answersArray.length > 0) {
+        const { error } = await supabase
+          .from('answers')
+          .upsert(answersArray, {
+            onConflict: 'assessment_id,section_id,question_index',
+          });
+
+        if (error) throw error;
+      }
+
+      // Update assessment status and updated_by
+      const updateData = { 
+        updated_at: new Date().toISOString(),
+        updated_by: user.id 
+      };
+      if (assessment.status === 'draft') {
+        updateData.status = 'in_progress';
+      }
+      
+      await supabase
+        .from('assessments')
+        .update(updateData)
+        .eq('id', assessment.id);
+
+      setLastSaved(new Date());
+    } catch (error) {
+      console.error('Error saving answers:', error);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const assignSection = async (sectionId, sectionTitle, userId) => {
+    if (!assessment?.id) return;
+
+    try {
+      const { error } = await supabase
+        .from('section_assignments')
+        .upsert({
+          assessment_id: assessment.id,
+          section_id: sectionId,
+          section_title: sectionTitle,
+          assigned_to: userId,
+          status: 'not_started',
+        }, {
+          onConflict: 'assessment_id,section_id',
+        });
+
+      if (error) throw error;
+      
+      // Reload assignments
+      loadSectionAssignments(assessment.id);
+    } catch (error) {
+      console.error('Error assigning section:', error);
+    }
+  };
+
+  // Assign multiple users to a section
+  const assignSectionMultiple = async (sectionId, sectionTitle, userIds) => {
+    if (!assessment?.id) return;
+
+    try {
+      // Update local state immediately for better UX
+      setSectionAssignments(prev => ({
+        ...prev,
+        [sectionId]: {
+          ...prev[sectionId],
+          assignees: userIds,
+          assigned_to: userIds[0] || null,
+        }
+      }));
+
+      // Save to database with assignees_json column
+      const { error: assignmentError } = await supabase
+        .from('section_assignments')
+        .upsert({
+          assessment_id: assessment.id,
+          section_id: sectionId,
+          section_title: sectionTitle,
+          assigned_to: userIds[0] || null, // Keep first user as primary for backward compatibility
+          assignees_json: JSON.stringify(userIds), // Store all assignees as JSON
+          status: 'not_started',
+        }, {
+          onConflict: 'assessment_id,section_id',
+        });
+
+      if (assignmentError) {
+        console.error('Error saving assignment:', assignmentError);
+        // If the assignees_json column doesn't exist yet, try without it
+        if (assignmentError.message?.includes('assignees_json')) {
+          const { error: fallbackError } = await supabase
+            .from('section_assignments')
+            .upsert({
+              assessment_id: assessment.id,
+              section_id: sectionId,
+              section_title: sectionTitle,
+              assigned_to: userIds[0] || null,
+              status: 'not_started',
+            }, {
+              onConflict: 'assessment_id,section_id',
+            });
+          if (fallbackError) throw fallbackError;
+        } else {
+          throw assignmentError;
+        }
+      }
+      
+    } catch (error) {
+      console.error('Error assigning section to multiple users:', error);
+    }
+  };
+
+  const industry = INDUSTRIES[selectedIndustry];
+
+  const filteredIndustries = Object.entries(INDUSTRIES).filter(([_, ind]) => {
+    if (countryFilter !== "all" && !ind.country.includes(countryFilter)) return false;
+    if (priorityFilter !== "all" && ind.priority !== priorityFilter) return false;
+    return true;
+  });
+
+  const allSections = (() => {
+    if (!selectedIndustry) return CORE_SECTIONS.filter(s => enabledCore[s.id]);
+    const core = CORE_SECTIONS.filter(s => enabledCore[s.id]);
+    if (!showIndQ || !industry) return core;
+    const ind = industry.specificQuestions.map((sq, i) => ({
+      id: `ind_${i}`, title: `${industry.icon} ${sq.section}`, questions: sq.questions.map(q => ({ q: q.q, hint: q.hint })), isIndustry: true,
+    }));
+    const aiIdx = core.findIndex(s => s.id === "aiSap");
+    const result = [...core];
+    result.splice(aiIdx >= 0 ? aiIdx + 1 : core.length, 0, ...ind);
+    return result;
+  })();
+
+  const totalQ = allSections.reduce((s,sec) => s + sec.questions.length, 0);
+  const answeredQ = Object.values(answers).filter(v => v?.trim()).length;
+  const progress = totalQ > 0 ? (answeredQ / totalQ) * 100 : 0;
+
+  const handleAnswer = (sid, qi, val) => setAnswers(p => ({ ...p, [`${sid}_${qi}`]: val }));
+
+  const gStyle = `
+    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=DM+Sans:wght@400;500;700&display=swap');
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Outfit','DM Sans',sans-serif}
+    .card{transition:all .3s cubic-bezier(.4,0,.2,1);cursor:pointer}
+    .card:hover{transform:translateY(-4px);box-shadow:0 16px 48px rgba(0,0,0,.1)!important}
+    .btn{transition:all .2s;cursor:pointer}
+    .btn:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(30,60,114,.18)!important}
+    .nav:hover{background:#EBF5FB!important}
+    textarea:focus,input:focus{outline:none;border-color:#2E86C1!important;box-shadow:0 0 0 3px rgba(46,134,193,.12)}
+    @keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+    .pill{display:inline-flex;align-items:center;padding:5px 14px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;transition:all .2s;border:1.5px solid transparent}
+    .pill:hover{transform:translateY(-1px)}
+  `;
+
+  // ═══════ STEP: SELECT INDUSTRY ═══════
+  if (step === "select") {
+    const priorityCounts = { core: 0, important: 0, niche: 0 };
+    Object.values(INDUSTRIES).forEach(i => priorityCounts[i.priority]++);
+    return (
+      <div style={{minHeight:"100vh",background:"#F7F9FC",position:"relative"}}>
+        <AnimBG/><style>{gStyle}</style>
+        <div style={{position:"relative",zIndex:1,maxWidth:"1060px",margin:"0 auto",padding:"40px 24px"}}>
+          <div style={{textAlign:"center",marginBottom:"36px",animation:"fadeUp .6s ease-out"}}>
+            <div style={{display:"inline-flex",alignItems:"center",gap:10,background:"linear-gradient(135deg,#1B3A5C,#2E86C1)",padding:"8px 22px",borderRadius:40,marginBottom:20}}>
+              <span style={{fontSize:20}}>🤖</span>
+              <span style={{color:"#fff",fontWeight:700,fontSize:13,letterSpacing:2,textTransform:"uppercase"}}>adesso AI Readiness Check</span>
+            </div>
+            <h1 style={{fontSize:"clamp(26px,3.5vw,38px)",fontWeight:800,color:"#1B3A5C",lineHeight:1.2,marginBottom:12}}>Branchenspezifischer AI Readiness Check</h1>
+            <p style={{fontSize:15,color:"#5D6D7E",maxWidth:620,margin:"0 auto",lineHeight:1.6}}>
+              Wählen Sie die Branche Ihres Kunden — basierend auf dem vollständigen adesso-Branchenportfolio für Deutschland und die Schweiz.
+            </p>
+          </div>
+
+          {/* Filters */}
+          <div style={{display:"flex",flexWrap:"wrap",gap:8,justifyContent:"center",marginBottom:24,animation:"fadeUp .5s ease-out .1s both"}}>
+            <span style={{fontSize:13,fontWeight:600,color:"#7F8C8D",alignSelf:"center",marginRight:4}}>Land:</span>
+            {[["all","🇩🇪🇨🇭 Alle"],["DE","🇩🇪 Deutschland"],["CH","🇨🇭 Schweiz"]].map(([v,l])=>(
+              <span key={v} className="pill" onClick={()=>setCountryFilter(v)}
+                style={{background:countryFilter===v?"#1B3A5C":"#fff",color:countryFilter===v?"#fff":"#5D6D7E",borderColor:countryFilter===v?"#1B3A5C":"#D5D8DC"}}>{l}</span>
+            ))}
+            <span style={{width:1,height:24,background:"#D5D8DC",margin:"0 4px"}}/>
+            <span style={{fontSize:13,fontWeight:600,color:"#7F8C8D",alignSelf:"center",marginRight:4}}>Relevanz:</span>
+            {[["all",`Alle (${Object.keys(INDUSTRIES).length})`],["core",`Kern (${priorityCounts.core})`],["important",`Wichtig (${priorityCounts.important})`],["niche",`Nische (${priorityCounts.niche})`]].map(([v,l])=>(
+              <span key={v} className="pill" onClick={()=>setPriorityFilter(v)}
+                style={{background:priorityFilter===v?"#2E86C1":"#fff",color:priorityFilter===v?"#fff":"#5D6D7E",borderColor:priorityFilter===v?"#2E86C1":"#D5D8DC"}}>{l}</span>
+            ))}
+          </div>
+
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(260px, 1fr))",gap:14,marginBottom:28}}>
+            {filteredIndustries.map(([key, ind], i) => (
+              <div key={key} className="card"
+                onClick={() => { setSelectedIndustry(key); setStep("configure"); }}
+                onMouseEnter={() => setHovered(key)} onMouseLeave={() => setHovered(null)}
+                style={{background:"#fff",borderRadius:14,padding:"22px 20px",border:hovered===key?`2px solid ${ind.color}`:"2px solid #E8EDF2",boxShadow:"0 2px 10px rgba(0,0,0,.03)",animation:`fadeUp .4s ease-out ${i*.04}s both`,position:"relative",overflow:"hidden"}}>
+                <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:hovered===key?ind.gradient:"transparent",transition:"all .3s"}}/>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+                  <span style={{fontSize:28}}>{ind.icon}</span>
+                  <div style={{display:"flex",gap:4}}>
+                    {ind.country.includes("DE")&&<span style={{fontSize:10,background:"#FDEBD0",color:"#E67E22",padding:"2px 6px",borderRadius:4,fontWeight:700}}>DE</span>}
+                    {ind.country.includes("CH")&&<span style={{fontSize:10,background:"#D5F5E3",color:"#27AE60",padding:"2px 6px",borderRadius:4,fontWeight:700}}>CH</span>}
+                  </div>
+                </div>
+                <h3 style={{fontSize:15,fontWeight:700,color:"#1B3A5C",marginBottom:4}}>{ind.label}</h3>
+                <p style={{fontSize:12,color:"#7F8C8D",lineHeight:1.4,marginBottom:12}}>{ind.desc}</p>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                  <span style={{fontSize:12,color:ind.color,fontWeight:600}}>{ind.specificQuestions.reduce((s,sq)=>s+sq.questions.length,0)} Fragen</span>
+                  <span style={{fontSize:14,color:ind.color}}>→</span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {filteredIndustries.length === 0 && (
+            <div style={{textAlign:"center",padding:40,color:"#95A5A6"}}>Keine Branchen für den gewählten Filter gefunden.</div>
+          )}
+
+          <div style={{textAlign:"center"}}>
+            <button className="btn" onClick={()=>{setSelectedIndustry(null);setStep("fill");setShowIndQ(false)}}
+              style={{background:"transparent",border:"2px dashed #BDC3C7",borderRadius:10,padding:"12px 28px",fontSize:14,color:"#7F8C8D",fontWeight:500}}>
+              Ohne Branchenauswahl fortfahren →
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ═══════ STEP: CONFIGURE ═══════
+  if (step === "configure") {
+    return (
+      <div style={{minHeight:"100vh",background:"#F7F9FC",position:"relative"}}>
+        <AnimBG/><style>{gStyle}</style>
+        <div style={{position:"relative",zIndex:1,maxWidth:700,margin:"0 auto",padding:"40px 24px"}}>
+          <button onClick={()=>setStep("select")} style={{background:"none",border:"none",color:"#2E86C1",fontSize:14,cursor:"pointer",marginBottom:20,fontWeight:500}}>← Branchenauswahl</button>
+          <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:28,animation:"fadeUp .5s ease-out"}}>
+            <div style={{width:52,height:52,borderRadius:13,background:industry.gradient,display:"flex",alignItems:"center",justifyContent:"center",fontSize:26}}>{industry.icon}</div>
+            <div>
+              <h1 style={{fontSize:24,fontWeight:800,color:"#1B3A5C"}}>{industry.label}</h1>
+              <p style={{fontSize:13,color:"#7F8C8D"}}>{industry.desc}</p>
+              <div style={{display:"flex",gap:4,marginTop:4}}>
+                {industry.country.includes("DE")&&<span style={{fontSize:10,background:"#FDEBD0",color:"#E67E22",padding:"2px 6px",borderRadius:4,fontWeight:700}}>🇩🇪 Deutschland</span>}
+                {industry.country.includes("CH")&&<span style={{fontSize:10,background:"#D5F5E3",color:"#27AE60",padding:"2px 6px",borderRadius:4,fontWeight:700}}>🇨🇭 Schweiz</span>}
+              </div>
+            </div>
+          </div>
+
+          <div style={{background:"#fff",borderRadius:14,padding:22,marginBottom:14,border:"1px solid #E8EDF2",animation:"fadeUp .5s ease-out .1s both"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+              <div>
+                <h3 style={{fontSize:15,fontWeight:700,color:"#1B3A5C"}}>{industry.icon} Branchenspezifische Fragen</h3>
+                <p style={{fontSize:12,color:"#7F8C8D",marginTop:3}}>{industry.specificQuestions.reduce((s,sq)=>s+sq.questions.length,0)} zusätzliche Fragen</p>
+              </div>
+              <Toggle on={showIndQ} onToggle={()=>setShowIndQ(!showIndQ)} color={industry.color}/>
+            </div>
+            {showIndQ && (
+              <div style={{marginTop:10,borderTop:"1px solid #E8EDF2",paddingTop:10}}>
+                {industry.specificQuestions.map((sq,i)=>(
+                  <div key={i} style={{fontSize:12,color:"#5D6D7E",padding:"3px 0"}}><span style={{fontWeight:600}}>{sq.section}</span> — {sq.questions.length} Fragen</div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div style={{background:"#fff",borderRadius:14,padding:22,border:"1px solid #E8EDF2",animation:"fadeUp .5s ease-out .2s both"}}>
+            <h3 style={{fontSize:15,fontWeight:700,color:"#1B3A5C",marginBottom:14}}>📋 Standardabschnitte</h3>
+            {CORE_SECTIONS.map(s=>(
+              <div key={s.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid #F2F3F4"}}>
+                <div><span style={{fontSize:13,color:"#1B3A5C",fontWeight:500}}>{s.title}</span><span style={{fontSize:11,color:"#95A5A6",marginLeft:6}}>{s.questions.length}</span></div>
+                <Toggle on={enabledCore[s.id]} onToggle={()=>setEnabledCore(p=>({...p,[s.id]:!p[s.id]}))}/>
+              </div>
+            ))}
+          </div>
+
+          <div style={{textAlign:"center",marginTop:28,animation:"fadeUp .5s ease-out .3s both"}}>
+            <div style={{fontSize:13,color:"#7F8C8D",marginBottom:10}}>Gesamt: <strong style={{color:"#1B3A5C"}}>{totalQ} Fragen</strong> in {allSections.length} Abschnitten</div>
+            <button className="btn" onClick={()=>{setStep("fill");setActiveSection(0)}}
+              style={{background:"linear-gradient(135deg,#1B3A5C,#2E86C1)",color:"#fff",border:"none",borderRadius:11,padding:"14px 44px",fontSize:15,fontWeight:700,boxShadow:"0 4px 16px rgba(30,60,114,.15)"}}>
+              Fragebogen starten →
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ═══════ STEP: FILL & EXPORT ═══════
+  return (
+    <div style={{minHeight:"100vh",background:"#F7F9FC",position:"relative"}}>
+      <AnimBG/><style>{gStyle}</style>
+      <div style={{position:"relative",zIndex:1,display:"flex",minHeight:"100vh"}}>
+        {/* Sidebar */}
+        <div style={{width:268,background:"#fff",borderRight:"1px solid #E8EDF2",padding:"16px 0",flexShrink:0,position:"sticky",top:0,height:"100vh",overflowY:"auto",display:"flex",flexDirection:"column"}}>
+          <div style={{padding:"0 16px",marginBottom:16}}>
+            <button onClick={()=>setStep(selectedIndustry?"configure":"select")} style={{background:"none",border:"none",color:"#2E86C1",fontSize:12,cursor:"pointer",fontWeight:500,marginBottom:10}}>← Zurück</button>
+            {industry&&(
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+                <div style={{width:28,height:28,borderRadius:7,background:industry.gradient,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}>{industry.icon}</div>
+                <span style={{fontSize:12,fontWeight:700,color:"#1B3A5C"}}>{industry.label}</span>
+              </div>
+            )}
+            <div style={{background:"#E8EDF2",borderRadius:5,height:7,marginBottom:5,overflow:"hidden"}}>
+              <div style={{background:"linear-gradient(90deg,#2E86C1,#27AE60)",height:"100%",borderRadius:5,width:`${progress}%`,transition:"width .5s ease"}}/>
+            </div>
+            <div style={{fontSize:11,color:"#7F8C8D"}}>{answeredQ}/{totalQ} beantwortet</div>
+            
+            {/* Save Status Indicator */}
+            {assessment?.id && (
+              <div style={{marginTop:8,padding:"6px 10px",background:saving?"#FEF9E7":"#EAFAF1",borderRadius:6,fontSize:11,color:saving?"#B7950B":"#27AE60",fontWeight:500}}>
+                {saving ? "⏳ Speichert..." : lastSaved ? `✓ Gespeichert ${lastSaved.toLocaleTimeString('de-DE')}` : "✓ Bereit"}
+              </div>
+            )}
+          </div>
+
+          <div style={{flex:1,overflowY:"auto"}}>
+            {allSections.map((s,i)=>{
+              const sAns = s.questions.filter((_,qi)=>answers[`${s.id}_${qi}`]?.trim()).length;
+              const active = activeSection===i;
+              return (
+                <div key={s.id} className="nav" onClick={()=>{setActiveSection(i);setExportDone(false)}}
+                  style={{padding:"8px 16px",background:active?"#EBF5FB":"transparent",borderRight:active?"3px solid #2E86C1":"3px solid transparent",display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer",transition:"all .2s"}}>
+                  <span style={{fontSize:12,fontWeight:active?700:500,color:s.isIndustry?(industry?.color||"#1B3A5C"):"#1B3A5C",lineHeight:1.3,flex:1}}>{s.title}</span>
+                  <span style={{fontSize:10,color:sAns===s.questions.length&&sAns>0?"#27AE60":"#95A5A6",fontWeight:600,marginLeft:6,whiteSpace:"nowrap"}}>{sAns}/{s.questions.length}</span>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Section Assignments (only for existing assessments) */}
+          {assessment?.id && collaborators.length > 0 && (
+            <div style={{padding:"12px 16px",borderTop:"1px solid #E8EDF2"}}>
+              <div style={{fontSize:11,fontWeight:700,color:"#1B3A5C",marginBottom:8}}>👥 Team-Zuweisung für diesen Abschnitt</div>
+              <MultiSelectDropdown
+                options={collaborators.map(c => ({
+                  id: c.id,
+                  label: c.full_name || c.email?.split('@')[0] || 'Unbekannt',
+                  sublabel: c.email,
+                }))}
+                selected={sectionAssignments[allSections[activeSection]?.id]?.assignees || []}
+                onChange={(selectedIds) => {
+                  const sec = allSections[activeSection];
+                  if (sec) {
+                    assignSectionMultiple(sec.id, sec.title, selectedIds);
+                  }
+                }}
+                placeholder="Team-Mitglieder auswählen..."
+                searchPlaceholder="Name oder E-Mail suchen..."
+                emptyMessage="Keine Personen gefunden"
+                maxDisplay={2}
+              />
+              {sectionAssignments[allSections[activeSection]?.id]?.assignees?.length > 0 && (
+                <div style={{marginTop:8,fontSize:10,color:"#7F8C8D"}}>
+                  {sectionAssignments[allSections[activeSection]?.id]?.assignees?.length} Person(en) zugewiesen
+                </div>
+              )}
+            </div>
+          )}
+
+          <div style={{padding:"12px 16px",borderTop:"1px solid #E8EDF2"}}>
+            <button className="btn" onClick={()=>setExportDone(true)}
+              style={{width:"100%",background:exportDone?"linear-gradient(135deg,#27AE60,#1E8449)":"linear-gradient(135deg,#1B3A5C,#2E86C1)",color:"#fff",border:"none",borderRadius:9,padding:10,fontSize:13,fontWeight:700,boxShadow:"0 4px 12px rgba(0,0,0,.1)"}}>
+              {exportDone?"✅ Zusammenfassung":"📄 Zusammenfassung"}
+            </button>
+          </div>
+        </div>
+
+        {/* Main */}
+        <div ref={contentRef} style={{flex:1,padding:"28px 36px",maxWidth:780,overflowY:"auto"}}>
+          {exportDone ? (
+            <div style={{animation:"fadeUp .5s ease-out"}}>
+              <div style={{textAlign:"center",marginBottom:28}}>
+                <div style={{width:56,height:56,borderRadius:"50%",background:"linear-gradient(135deg,#27AE60,#1E8449)",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:28,marginBottom:12,color:"#fff"}}>✓</div>
+                <h2 style={{fontSize:22,fontWeight:800,color:"#1B3A5C"}}>Readiness Check Zusammenfassung</h2>
+                <p style={{color:"#7F8C8D",fontSize:13,marginTop:6}}>
+                  {industry?.label||"Allgemein"} — {new Date().toLocaleDateString("de-DE")} — {answeredQ}/{totalQ} beantwortet
+                </p>
+              </div>
+
+              {/* ═══ AI READINESS ASSESSMENT ═══ */}
+              {(() => {
+                const rd = computeReadinessFromAnswers(answers);
+                const overall = Math.round((rd.sap + rd.btp + rd.data) / 3);
+                const oCol = overall >= 66 ? "#27AE60" : overall >= 33 ? "#F39C12" : "#E74C3C";
+                return (
+                  <div style={{background:"#fff",borderRadius:16,padding:"28px 24px",marginBottom:28,border:"2px solid #E8EDF2",boxShadow:"0 4px 20px rgba(0,0,0,0.06)"}}>
+                    <div style={{textAlign:"center",marginBottom:20}}>
+                      <h3 style={{fontSize:18,fontWeight:800,color:"#1B3A5C",marginBottom:4}}>🎯 AI Readiness Assessment</h3>
+                      <p style={{fontSize:12,color:"#7F8C8D"}}>Automatische Bewertung basierend auf Ihren Antworten</p>
+                    </div>
+                    <div style={{display:"flex",gap:8,justifyContent:"center",flexWrap:"wrap",marginBottom:20}}>
+                      <GaugeMeter value={rd.sap} label="SAP System" sublabel="S/4HANA, Clean Core, Joule"/>
+                      <GaugeMeter value={rd.btp} label="BTP & AI Platform" sublabel="AI Core, Datasphere, BDC"/>
+                      <GaugeMeter value={rd.data} label="Datenreife" sublabel="Qualität, Governance, DWH"/>
+                    </div>
+                    <div style={{textAlign:"center",padding:"16px 20px",background:overall>=66?"#EAFAF1":overall>=33?"#FEF9E7":"#FDEDEC",borderRadius:12,border:`1.5px solid ${oCol}30`}}>
+                      <div style={{fontSize:13,fontWeight:600,color:"#5D6D7E",marginBottom:4}}>Gesamtbewertung AI Readiness</div>
+                      <div style={{fontSize:28,fontWeight:800,color:oCol}}>{overall}%</div>
+                      <div style={{fontSize:12,color:oCol,fontWeight:600,marginTop:2}}>
+                        {overall >= 66 ? "Ihr Unternehmen ist gut für SAP Business AI aufgestellt" :
+                         overall >= 33 ? "Grundlagen vorhanden — gezielte Maßnahmen empfohlen" :
+                         "Erheblicher Handlungsbedarf vor KI-Einführung"}
+                      </div>
+                      {rd.sap < 33 && <div style={{fontSize:11,color:"#E74C3C",marginTop:8}}>⚠️ SAP-System: Migration auf S/4HANA und Clean-Core-Strategie empfohlen</div>}
+                      {rd.btp < 33 && <div style={{fontSize:11,color:"#E74C3C",marginTop:4}}>⚠️ BTP: SAP BTP mit AI Core und CPEA/BTPEA-Lizenzierung erforderlich</div>}
+                      {rd.data < 33 && <div style={{fontSize:11,color:"#E74C3C",marginTop:4}}>⚠️ Daten: Datenstrategie, Data Governance und zentrales DWH aufbauen</div>}
+                      {rd.sap >= 33 && rd.sap < 66 && <div style={{fontSize:11,color:"#F39C12",marginTop:8}}>💡 SAP-System: Joule aktivieren und Clean-Core-Strategie vorantreiben</div>}
+                      {rd.btp >= 33 && rd.btp < 66 && <div style={{fontSize:11,color:"#F39C12",marginTop:4}}>💡 BTP: SAP AI Core und SAP Business Data Cloud evaluieren</div>}
+                      {rd.data >= 33 && rd.data < 66 && <div style={{fontSize:11,color:"#F39C12",marginTop:4}}>💡 Daten: Data Governance stärken und SAP Datasphere einführen</div>}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {allSections.map(s=>(
+                <div key={s.id} style={{marginBottom:20,background:"#fff",borderRadius:12,border:s.isIndustry?`2px solid ${industry?.color||"#2E86C1"}30`:"1px solid #E8EDF2",overflow:"hidden"}}>
+                  <div style={{padding:"12px 18px",background:s.isIndustry?`${industry?.color||"#2E86C1"}10`:"#FAFBFC",borderBottom:"1px solid #E8EDF2"}}>
+                    <h3 style={{fontSize:14,fontWeight:700,color:s.isIndustry?(industry?.color||"#1B3A5C"):"#1B3A5C"}}>{s.title}</h3>
+                  </div>
+                  <div style={{padding:"12px 18px"}}>
+                    {s.questions.map((q,qi)=>{
+                      const ans=answers[`${s.id}_${qi}`];
+                      return(
+                        <div key={qi} style={{padding:"6px 0",borderBottom:qi<s.questions.length-1?"1px solid #F2F3F4":"none"}}>
+                          <div style={{fontSize:12,fontWeight:600,color:"#1B3A5C",marginBottom:2}}>{q.q}</div>
+                          <div style={{fontSize:12,color:ans?.trim()?"#2C3E50":"#BDC3C7",fontStyle:ans?.trim()?"normal":"italic"}}>{ans?.trim()||"— nicht beantwortet —"}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+              <div style={{textAlign:"center",marginTop:20,paddingBottom:32}}>
+                {/* Export buttons */}
+                <div style={{display:"flex",gap:12,justifyContent:"center",flexWrap:"wrap",marginBottom:16}}>
+                  <button className="btn" onClick={() => {
+                    const rd = computeReadinessFromAnswers(answers);
+                    exportToWord(allSections, answers, industry, rd);
+                  }}
+                    style={{background:"linear-gradient(135deg,#2471A3,#2E86C1)",color:"#fff",border:"none",borderRadius:10,padding:"12px 28px",fontSize:13,fontWeight:700,display:"flex",alignItems:"center",gap:8,boxShadow:"0 4px 14px rgba(46,134,193,0.2)"}}>
+                    <span style={{fontSize:18}}>📝</span> Word exportieren (.doc)
+                  </button>
+                  <button className="btn" onClick={() => {
+                    const rd = computeReadinessFromAnswers(answers);
+                    exportToPDF(allSections, answers, industry, rd);
+                  }}
+                    style={{background:"linear-gradient(135deg,#C0392B,#E74C3C)",color:"#fff",border:"none",borderRadius:10,padding:"12px 28px",fontSize:13,fontWeight:700,display:"flex",alignItems:"center",gap:8,boxShadow:"0 4px 14px rgba(231,76,60,0.2)"}}>
+                    <span style={{fontSize:18}}>📄</span> PDF exportieren
+                  </button>
+                </div>
+                <p style={{fontSize:11,color:"#95A5A6",marginBottom:16}}>
+                  Word-Datei wird direkt heruntergeladen. PDF öffnet den Druckdialog — wählen Sie dort "Als PDF speichern".
+                </p>
+                <button className="btn" onClick={()=>setExportDone(false)}
+                  style={{background:"#fff",color:"#2E86C1",border:"2px solid #2E86C1",borderRadius:9,padding:"10px 28px",fontSize:13,fontWeight:600}}>
+                  ← Zurück zum Fragebogen
+                </button>
+              </div>
+            </div>
+          ) : allSections[activeSection] && (()=>{
+            const sec=allSections[activeSection];
+            return(
+              <div style={{animation:"fadeUp .4s ease-out"}} key={sec.id}>
+                <div style={{marginBottom:24}}>
+                  {sec.isIndustry&&<div style={{display:"inline-block",background:`${industry?.color}15`,border:`1.5px solid ${industry?.color}40`,borderRadius:7,padding:"3px 10px",fontSize:10,fontWeight:700,color:industry?.color,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Branchenspezifisch</div>}
+                  <h2 style={{fontSize:20,fontWeight:800,color:"#1B3A5C"}}>{sec.title}</h2>
+                  <p style={{fontSize:12,color:"#95A5A6",marginTop:3}}>Abschnitt {activeSection+1} von {allSections.length}</p>
+                </div>
+                {sec.questions.map((q,qi)=>(
+                  <div key={qi} style={{marginBottom:16,background:"#fff",borderRadius:11,padding:"18px 20px",border:"1px solid #E8EDF2",animation:`fadeUp .3s ease-out ${qi*.04}s both`}}>
+                    <label style={{display:"block",fontSize:14,fontWeight:600,color:"#1B3A5C",marginBottom:4}}>{q.q}</label>
+                    {q.hint&&<div style={{fontSize:11,color:"#95A5A6",marginBottom:8,fontStyle:"italic"}}>{q.hint}</div>}
+                    {q.type==="text"?(
+                      <input type="text" value={answers[`${sec.id}_${qi}`]||""} onChange={e=>handleAnswer(sec.id,qi,e.target.value)} placeholder="Bitte eingeben..."
+                        style={{width:"100%",padding:"9px 12px",borderRadius:7,border:"1.5px solid #D5D8DC",fontSize:13,background:"#FAFBFC",transition:"all .2s"}}/>
+                    ):(
+                      <textarea value={answers[`${sec.id}_${qi}`]||""} onChange={e=>handleAnswer(sec.id,qi,e.target.value)} placeholder="Bitte beschreiben..." rows={3}
+                        style={{width:"100%",padding:"9px 12px",borderRadius:7,border:"1.5px solid #D5D8DC",fontSize:13,resize:"vertical",background:"#FAFBFC",transition:"all .2s"}}/>
+                    )}
+                  </div>
+                ))}
+                <div style={{display:"flex",justifyContent:"space-between",marginTop:28,paddingBottom:32}}>
+                  <button onClick={()=>setActiveSection(Math.max(0,activeSection-1))} disabled={activeSection===0}
+                    style={{background:activeSection===0?"#E8EDF2":"#fff",color:activeSection===0?"#BDC3C7":"#2E86C1",border:activeSection===0?"none":"2px solid #2E86C1",borderRadius:9,padding:"10px 24px",fontSize:13,fontWeight:600,cursor:activeSection===0?"default":"pointer"}}>
+                    ← Zurück
+                  </button>
+                  <button className="btn" onClick={()=>setActiveSection(Math.min(allSections.length-1,activeSection+1))} disabled={activeSection===allSections.length-1}
+                    style={{background:activeSection===allSections.length-1?"#E8EDF2":"linear-gradient(135deg,#1B3A5C,#2E86C1)",color:activeSection===allSections.length-1?"#BDC3C7":"#fff",border:"none",borderRadius:9,padding:"10px 24px",fontSize:13,fontWeight:600,cursor:activeSection===allSections.length-1?"default":"pointer",boxShadow:activeSection===allSections.length-1?"none":"0 4px 12px rgba(0,0,0,.1)"}}>
+                    Weiter →
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      </div>
+    </div>
+  );
+}
