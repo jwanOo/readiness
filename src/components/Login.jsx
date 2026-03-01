@@ -400,7 +400,22 @@ export default function Login() {
         {/* Footer */}
         <div style={{ marginTop: 24, textAlign: 'center' }}>
           <p style={{ fontSize: 12, color: '#95A5A6' }}>
-            Powered by adesso SE
+            Powered by{' '}
+            <a 
+              href="https://www.linkedin.com/in/jwan-s/" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              style={{ 
+                color: '#2E86C1', 
+                textDecoration: 'none',
+                fontWeight: 600,
+                transition: 'color 0.2s'
+              }}
+              onMouseOver={(e) => e.target.style.color = '#1B3A5C'}
+              onMouseOut={(e) => e.target.style.color = '#2E86C1'}
+            >
+              Jwan Sulyman
+            </a>
           </p>
         </div>
       </div>
