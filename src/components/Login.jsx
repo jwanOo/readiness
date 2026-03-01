@@ -1,15 +1,76 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { supabase } from '../lib/supabase';
 
 export default function Login() {
   const { signIn, signUp, signInWithMagicLink, error: authError, connectionStatus, retryConnection } = useAuth();
-  const [mode, setMode] = useState('login'); // login, register, magic
+  const [mode, setMode] = useState('login'); // login, register, magic, setPassword
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const [isInvitation, setIsInvitation] = useState(false);
+
+  // Check for invitation/recovery token in URL on mount
+  useEffect(() => {
+    const handleAuthCallback = async () => {
+      // Check URL hash for tokens (Supabase uses hash-based routing for auth)
+      const hashParams = new URLSearchParams(window.location.hash.substring(1));
+      const accessToken = hashParams.get('access_token');
+      const refreshToken = hashParams.get('refresh_token');
+      const type = hashParams.get('type');
+      
+      // Also check query params
+      const queryParams = new URLSearchParams(window.location.search);
+      const tokenFromQuery = queryParams.get('token');
+      const typeFromQuery = queryParams.get('type');
+
+      console.log('Auth callback check:', { accessToken, type, tokenFromQuery, typeFromQuery });
+
+      // Handle invitation or recovery
+      if (type === 'invite' || type === 'recovery' || type === 'signup' || 
+          typeFromQuery === 'invite' || typeFromQuery === 'recovery') {
+        setIsInvitation(true);
+        setMode('setPassword');
+        
+        // If we have tokens, set the session
+        if (accessToken && refreshToken) {
+          try {
+            const { error } = await supabase.auth.setSession({
+              access_token: accessToken,
+              refresh_token: refreshToken
+            });
+            if (error) {
+              console.error('Error setting session:', error);
+              setError('Fehler beim Verarbeiten der Einladung: ' + error.message);
+            }
+          } catch (err) {
+            console.error('Session error:', err);
+          }
+        }
+        
+        // Clean up URL
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+    };
+
+    handleAuthCallback();
+
+    // Also listen for auth state changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log('Auth event:', event, session?.user?.email);
+      
+      if (event === 'PASSWORD_RECOVERY' || event === 'USER_UPDATED') {
+        setIsInvitation(true);
+        setMode('setPassword');
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -26,9 +87,37 @@ export default function Login() {
       } else if (mode === 'magic') {
         await signInWithMagicLink(email);
         setMessage('Magic Link wurde gesendet! Bitte prüfen Sie Ihre E-Mail.');
+      } else if (mode === 'setPassword') {
+        // Validate passwords match
+        if (password !== confirmPassword) {
+          setError('Die Passwörter stimmen nicht überein');
+          setLoading(false);
+          return;
+        }
+        if (password.length < 6) {
+          setError('Das Passwort muss mindestens 6 Zeichen lang sein');
+          setLoading(false);
+          return;
+        }
+
+        // Update password
+        const { error: updateError } = await supabase.auth.updateUser({
+          password: password
+        });
+
+        if (updateError) {
+          throw updateError;
+        }
+
+        setMessage('Passwort erfolgreich gesetzt! Sie werden angemeldet...');
+        
+        // The auth state change will handle the redirect
+        setTimeout(() => {
+          window.location.reload();
+        }, 1500);
       }
     } catch (err) {
-      // Error is already set in AuthContext, but we can add local handling
+      console.error('Auth error:', err);
       if (!authError) {
         setError(err.message || 'Ein Fehler ist aufgetreten');
       }
@@ -67,6 +156,7 @@ export default function Login() {
     .login-error { background: #FDEDEC; color: #E74C3C; padding: 12px 16px; border-radius: 8px; font-size: 13px; margin-bottom: 16px; }
     .login-success { background: #EAFAF1; color: #27AE60; padding: 12px 16px; border-radius: 8px; font-size: 13px; margin-bottom: 16px; }
     .login-warning { background: #FEF9E7; color: #B7950B; padding: 12px 16px; border-radius: 8px; font-size: 13px; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+    .login-info { background: #EBF5FB; color: #2E86C1; padding: 12px 16px; border-radius: 8px; font-size: 13px; margin-bottom: 16px; }
     .login-divider { display: flex; align-items: center; margin: 20px 0; }
     .login-divider-line { flex: 1; height: 1px; background: #E8EDF2; }
     .login-divider-text { padding: 0 16px; color: #95A5A6; font-size: 12px; }
@@ -76,7 +166,20 @@ export default function Login() {
     .connection-error { background: #FDEDEC; color: #E74C3C; }
     @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     .spinner { width: 14px; height: 14px; border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: spin 1s linear infinite; display: inline-block; }
+    .password-strength { height: 4px; border-radius: 2px; margin-top: -12px; margin-bottom: 16px; transition: all 0.3s; }
   `;
+
+  // Password strength indicator
+  const getPasswordStrength = (pwd) => {
+    if (!pwd) return { width: '0%', color: '#E8EDF2', label: '' };
+    if (pwd.length < 6) return { width: '25%', color: '#E74C3C', label: 'Zu kurz' };
+    if (pwd.length < 8) return { width: '50%', color: '#F39C12', label: 'Schwach' };
+    if (pwd.length < 12 && /[A-Z]/.test(pwd) && /[0-9]/.test(pwd)) return { width: '75%', color: '#F1C40F', label: 'Mittel' };
+    if (pwd.length >= 12 && /[A-Z]/.test(pwd) && /[0-9]/.test(pwd) && /[^A-Za-z0-9]/.test(pwd)) return { width: '100%', color: '#27AE60', label: 'Stark' };
+    return { width: '50%', color: '#F39C12', label: 'Schwach' };
+  };
+
+  const passwordStrength = getPasswordStrength(password);
 
   return (
     <div className="login-container">
@@ -99,11 +202,15 @@ export default function Login() {
             </span>
           </div>
           <h1 style={{ fontSize: 24, fontWeight: 800, color: '#1B3A5C', marginBottom: 8 }}>
-            {mode === 'login' ? 'Willkommen zurück' : mode === 'register' ? 'Konto erstellen' : 'Magic Link Login'}
+            {mode === 'login' ? 'Willkommen zurück' : 
+             mode === 'register' ? 'Konto erstellen' : 
+             mode === 'setPassword' ? 'Passwort festlegen' :
+             'Magic Link Login'}
           </h1>
           <p style={{ fontSize: 14, color: '#7F8C8D' }}>
             {mode === 'login' ? 'Melden Sie sich an, um fortzufahren' : 
              mode === 'register' ? 'Erstellen Sie ein neues Konto' : 
+             mode === 'setPassword' ? 'Legen Sie Ihr Passwort fest, um Ihr Konto zu aktivieren' :
              'Erhalten Sie einen Login-Link per E-Mail'}
           </p>
         </div>
@@ -137,21 +244,30 @@ export default function Login() {
           </div>
         )}
 
-        {/* Tabs */}
-        <div className="login-tabs">
-          <button 
-            className={`login-tab ${mode === 'login' ? 'login-tab-active' : 'login-tab-inactive'}`}
-            onClick={() => { setMode('login'); setError(''); setMessage(''); }}
-          >
-            Anmelden
-          </button>
-          <button 
-            className={`login-tab ${mode === 'register' ? 'login-tab-active' : 'login-tab-inactive'}`}
-            onClick={() => { setMode('register'); setError(''); setMessage(''); }}
-          >
-            Registrieren
-          </button>
-        </div>
+        {/* Invitation Info */}
+        {isInvitation && mode === 'setPassword' && (
+          <div className="login-info">
+            🎉 Sie wurden eingeladen! Bitte legen Sie ein Passwort fest, um Ihr Konto zu aktivieren.
+          </div>
+        )}
+
+        {/* Tabs - only show if not in setPassword mode */}
+        {mode !== 'setPassword' && (
+          <div className="login-tabs">
+            <button 
+              className={`login-tab ${mode === 'login' ? 'login-tab-active' : 'login-tab-inactive'}`}
+              onClick={() => { setMode('login'); setError(''); setMessage(''); }}
+            >
+              Anmelden
+            </button>
+            <button 
+              className={`login-tab ${mode === 'register' ? 'login-tab-active' : 'login-tab-inactive'}`}
+              onClick={() => { setMode('register'); setError(''); setMessage(''); }}
+            >
+              Registrieren
+            </button>
+          </div>
+        )}
 
         {/* Error/Success Messages */}
         {displayError && <div className="login-error">⚠️ {displayError}</div>}
@@ -170,24 +286,66 @@ export default function Login() {
             />
           )}
           
-          <input
-            type="email"
-            className="login-input"
-            placeholder="E-Mail-Adresse"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-          />
+          {mode !== 'setPassword' && (
+            <input
+              type="email"
+              className="login-input"
+              placeholder="E-Mail-Adresse"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+            />
+          )}
           
-          {mode !== 'magic' && (
+          {(mode === 'login' || mode === 'register' || mode === 'setPassword') && (
+            <>
+              <input
+                type="password"
+                className="login-input"
+                placeholder={mode === 'setPassword' ? 'Neues Passwort' : 'Passwort'}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                minLength={6}
+              />
+              
+              {/* Password strength indicator for setPassword mode */}
+              {mode === 'setPassword' && password && (
+                <div style={{ marginTop: -12, marginBottom: 16 }}>
+                  <div style={{ 
+                    height: 4, 
+                    borderRadius: 2, 
+                    background: '#E8EDF2',
+                    overflow: 'hidden'
+                  }}>
+                    <div style={{ 
+                      width: passwordStrength.width, 
+                      height: '100%', 
+                      background: passwordStrength.color,
+                      transition: 'all 0.3s'
+                    }} />
+                  </div>
+                  <div style={{ fontSize: 11, color: passwordStrength.color, marginTop: 4 }}>
+                    {passwordStrength.label}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Confirm password for setPassword mode */}
+          {mode === 'setPassword' && (
             <input
               type="password"
               className="login-input"
-              placeholder="Passwort"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Passwort bestätigen"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
               required
               minLength={6}
+              style={{
+                borderColor: confirmPassword && password !== confirmPassword ? '#E74C3C' : undefined
+              }}
             />
           )}
 
@@ -204,24 +362,40 @@ export default function Login() {
             ) : 
              mode === 'login' ? 'Anmelden' : 
              mode === 'register' ? 'Registrieren' : 
+             mode === 'setPassword' ? 'Passwort festlegen' :
              'Magic Link senden'}
           </button>
         </form>
 
-        {/* Divider */}
-        <div className="login-divider">
-          <div className="login-divider-line" />
-          <span className="login-divider-text">oder</span>
-          <div className="login-divider-line" />
-        </div>
+        {/* Divider - only show if not in setPassword mode */}
+        {mode !== 'setPassword' && (
+          <>
+            <div className="login-divider">
+              <div className="login-divider-line" />
+              <span className="login-divider-text">oder</span>
+              <div className="login-divider-line" />
+            </div>
 
-        {/* Magic Link Option */}
-        <button 
-          className="login-btn login-btn-secondary"
-          onClick={() => { setMode(mode === 'magic' ? 'login' : 'magic'); setError(''); setMessage(''); }}
-        >
-          {mode === 'magic' ? '← Zurück zur Anmeldung' : '✉️ Login ohne Passwort (Magic Link)'}
-        </button>
+            {/* Magic Link Option */}
+            <button 
+              className="login-btn login-btn-secondary"
+              onClick={() => { setMode(mode === 'magic' ? 'login' : 'magic'); setError(''); setMessage(''); }}
+            >
+              {mode === 'magic' ? '← Zurück zur Anmeldung' : '✉️ Login ohne Passwort (Magic Link)'}
+            </button>
+          </>
+        )}
+
+        {/* Back to login for setPassword mode */}
+        {mode === 'setPassword' && !isInvitation && (
+          <button 
+            className="login-btn login-btn-secondary"
+            onClick={() => { setMode('login'); setError(''); setMessage(''); setIsInvitation(false); }}
+            style={{ marginTop: 16 }}
+          >
+            ← Zurück zur Anmeldung
+          </button>
+        )}
 
         {/* Footer */}
         <div style={{ marginTop: 24, textAlign: 'center' }}>
