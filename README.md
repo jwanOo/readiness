@@ -110,9 +110,6 @@ The app supports:
 - 💼 Professional Services
 - 🧪 Chemical / Process Industries
 
-## 📄 License
-
-Internal use only - adesso SE
 
 ## 🤝 Contributing
 
@@ -123,4 +120,4 @@ Internal use only - adesso SE
 
 ---
 
-Built with ❤️ by adesso
+Built with ❤️ by J-1
