@@ -556,7 +556,6 @@ ${answers.length > 0 ? answers.map(a => `
             padding: '8px 16px', 
             borderRadius: 30 
           }}>
-            <span style={{ fontSize: 16 }}>🤖</span>
             <span style={{ color: '#fff', fontWeight: 700, fontSize: 12, letterSpacing: 1 }}>AI READINESS CHECK</span>
           </div>
         </div>
