@@ -1421,10 +1421,32 @@ export default function AIReadinessCheck({
                   {cluster.items.map((s) => {
                     const sAns = s.questions.filter((_,qi)=>answers[`${s.id}_${qi}`]?.trim()).length;
                     const active = activeSection===s.originalIndex && !showRecommendations;
+                    const canEdit = canEditSection(s.id);
                     return (
                       <div key={s.id} className="nav" onClick={()=>{setActiveSection(s.originalIndex);setShowRecommendations(false);setExportDone(false)}}
-                        style={{padding:"7px 16px 7px 24px",background:active?"#EBF5FB":"transparent",borderRight:active?"3px solid #2E86C1":"3px solid transparent",display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer",transition:"all .2s"}}>
-                        <span style={{fontSize:11,fontWeight:active?700:500,color:s.isIndustry?(industry?.color||"#1B3A5C"):"#1B3A5C",lineHeight:1.3,flex:1}}>{s.title.replace(/^[^\s]+\s/, '')}</span>
+                        style={{
+                          padding:"7px 16px 7px 24px",
+                          background:active?"#EBF5FB":(!canEdit?"#F7F9FC":"transparent"),
+                          borderRight:active?"3px solid #2E86C1":"3px solid transparent",
+                          display:"flex",
+                          alignItems:"center",
+                          justifyContent:"space-between",
+                          cursor:"pointer",
+                          transition:"all .2s",
+                          opacity:canEdit?1:0.6,
+                        }}>
+                        <div style={{display:"flex",alignItems:"center",gap:4,flex:1,minWidth:0}}>
+                          {!canEdit && <span style={{fontSize:10,opacity:0.7}}>🔒</span>}
+                          <span style={{
+                            fontSize:11,
+                            fontWeight:active?700:500,
+                            color:!canEdit?"#95A5A6":(s.isIndustry?(industry?.color||"#1B3A5C"):"#1B3A5C"),
+                            lineHeight:1.3,
+                            overflow:"hidden",
+                            textOverflow:"ellipsis",
+                            whiteSpace:"nowrap",
+                          }}>{s.title.replace(/^[^\s]+\s/, '')}</span>
+                        </div>
                         <span style={{fontSize:10,color:sAns===s.questions.length&&sAns>0?"#27AE60":"#95A5A6",fontWeight:600,marginLeft:6,whiteSpace:"nowrap"}}>{sAns}/{s.questions.length}</span>
                       </div>
                     );
