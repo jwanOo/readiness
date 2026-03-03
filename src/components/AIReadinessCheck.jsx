@@ -1,7 +1,11 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import MultiSelectDropdown from './MultiSelectDropdown';
+import { generatePDF } from '../lib/pdfExport';
+import Recommendations from './Recommendations';
+import SectionAIPanel from './SectionAIPanel';
+import SectionRecommendations from './SectionRecommendations';
 
 /* ═══════════════════════════════════════════════════════════════
    COMPLETE ADESSO INDUSTRY MAP (DE + CH)
@@ -829,6 +833,7 @@ export default function AIReadinessCheck({
   assessment = null,  // Existing assessment object from database
   onSave = null,      // Callback when assessment is saved
   onBack = null,      // Callback to go back to dashboard
+  onNavigateToDashboard = null, // Callback to navigate to dashboard
 }) {
   const { user } = useAuth() || {};
   
@@ -838,6 +843,7 @@ export default function AIReadinessCheck({
   const [hovered, setHovered] = useState(null);
   const [answers, setAnswers] = useState({});
   const [activeSection, setActiveSection] = useState(0);
+  const [showRecommendations, setShowRecommendations] = useState(false);
   const [exportDone, setExportDone] = useState(false);
   const [showIndQ, setShowIndQ] = useState(true);
   const [enabledCore, setEnabledCore] = useState(CORE_SECTIONS.reduce((a,s)=>({...a,[s.id]:true}),{}));
@@ -849,6 +855,29 @@ export default function AIReadinessCheck({
   const [sectionAssignments, setSectionAssignments] = useState({});
   const contentRef = useRef(null);
   const saveTimeoutRef = useRef(null);
+  
+  // Real-time collaboration state
+  const [activeUsers, setActiveUsers] = useState([]);
+  const [realtimeEnabled, setRealtimeEnabled] = useState(false);
+  const [lastRemoteUpdate, setLastRemoteUpdate] = useState(null);
+  const realtimeChannelRef = useRef(null);
+  const presenceChannelRef = useRef(null);
+  
+  // Language preference for AI recommendations
+  const [language, setLanguage] = useState(() => {
+    // Try to get from localStorage, default to 'de'
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('ai_readiness_language') || 'de';
+    }
+    return 'de';
+  });
+  
+  // Save language preference
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('ai_readiness_language', language);
+    }
+  }, [language]);
 
   // Load existing answers when assessment is provided
   useEffect(() => {
@@ -1256,11 +1285,52 @@ export default function AIReadinessCheck({
   return (
     <div style={{minHeight:"100vh",background:"#F7F9FC",position:"relative"}}>
       <AnimBG/><style>{gStyle}</style>
+      
+      {/* Floating AI Assistant Panel */}
+      {!exportDone && allSections[activeSection] && (
+        <SectionAIPanel
+          section={allSections[activeSection]}
+          answers={answers}
+          industry={industry}
+          language={language}
+          customerName={answers['general_0'] || assessment?.customer_name || ''}
+          userId={user?.id}
+          assessmentId={assessment?.id}
+        />
+      )}
+      
       <div style={{position:"relative",zIndex:1,display:"flex",minHeight:"100vh"}}>
         {/* Sidebar */}
         <div style={{width:268,background:"#fff",borderRight:"1px solid #E8EDF2",padding:"16px 0",flexShrink:0,position:"sticky",top:0,height:"100vh",overflowY:"auto",display:"flex",flexDirection:"column"}}>
           <div style={{padding:"0 16px",marginBottom:16}}>
-            <button onClick={()=>setStep(selectedIndustry?"configure":"select")} style={{background:"none",border:"none",color:"#2E86C1",fontSize:12,cursor:"pointer",fontWeight:500,marginBottom:10}}>← Zurück</button>
+            {/* Dashboard Button - only show when editing existing assessment */}
+            {onNavigateToDashboard && assessment && (
+              <button 
+                onClick={onNavigateToDashboard} 
+                style={{
+                  background:"linear-gradient(135deg,#1B3A5C,#2E86C1)",
+                  border:"none",
+                  color:"#fff",
+                  fontSize:12,
+                  cursor:"pointer",
+                  fontWeight:600,
+                  marginBottom:12,
+                  padding:"8px 14px",
+                  borderRadius:8,
+                  display:"flex",
+                  alignItems:"center",
+                  gap:6,
+                  width:"100%",
+                  justifyContent:"center",
+                }}
+              >
+                ← Dashboard
+              </button>
+            )}
+            {/* Back to previous step button */}
+            {!assessment && (
+              <button onClick={()=>setStep(selectedIndustry?"configure":"select")} style={{background:"none",border:"none",color:"#2E86C1",fontSize:12,cursor:"pointer",fontWeight:500,marginBottom:10}}>← Zurück</button>
+            )}
             {industry&&(
               <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
                 <div style={{width:28,height:28,borderRadius:7,background:industry.gradient,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}>{industry.icon}</div>
@@ -1281,17 +1351,62 @@ export default function AIReadinessCheck({
           </div>
 
           <div style={{flex:1,overflowY:"auto"}}>
-            {allSections.map((s,i)=>{
-              const sAns = s.questions.filter((_,qi)=>answers[`${s.id}_${qi}`]?.trim()).length;
-              const active = activeSection===i;
-              return (
-                <div key={s.id} className="nav" onClick={()=>{setActiveSection(i);setExportDone(false)}}
-                  style={{padding:"8px 16px",background:active?"#EBF5FB":"transparent",borderRight:active?"3px solid #2E86C1":"3px solid transparent",display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer",transition:"all .2s"}}>
-                  <span style={{fontSize:12,fontWeight:active?700:500,color:s.isIndustry?(industry?.color||"#1B3A5C"):"#1B3A5C",lineHeight:1.3,flex:1}}>{s.title}</span>
-                  <span style={{fontSize:10,color:sAns===s.questions.length&&sAns>0?"#27AE60":"#95A5A6",fontWeight:600,marginLeft:6,whiteSpace:"nowrap"}}>{sAns}/{s.questions.length}</span>
+            {/* Group sections into clusters */}
+            {(() => {
+              // Define section clusters
+              const clusters = [
+                { id: 'basics', label: '📋 Grundlagen', icon: '📋', sections: ['general'] },
+                { id: 'sap', label: '💻 SAP Systeme', icon: '💻', sections: ['landscape', 'licensing', 'btp', 'cloud'] },
+                { id: 'ai', label: '🤖 KI & Daten', icon: '🤖', sections: ['aiSap', 'aiNonSap', 'data'] },
+                { id: 'org', label: '🏢 Organisation', icon: '🏢', sections: ['security', 'org', 'useCases'] },
+                { id: 'industry', label: `${industry?.icon || '⚡'} Branche`, icon: industry?.icon || '⚡', sections: [], isIndustry: true },
+              ];
+              
+              // Group sections by cluster
+              const groupedSections = clusters.map(cluster => {
+                if (cluster.isIndustry) {
+                  return {
+                    ...cluster,
+                    items: allSections.map((s, i) => ({ ...s, originalIndex: i })).filter(s => s.isIndustry)
+                  };
+                }
+                return {
+                  ...cluster,
+                  items: allSections.map((s, i) => ({ ...s, originalIndex: i })).filter(s => cluster.sections.includes(s.id))
+                };
+              }).filter(cluster => cluster.items.length > 0);
+              
+              return groupedSections.map((cluster, ci) => (
+                <div key={cluster.id} style={{marginBottom:4}}>
+                  {/* Cluster Header */}
+                  <div style={{
+                    padding:"8px 16px",
+                    fontSize:10,
+                    fontWeight:700,
+                    color:cluster.isIndustry ? (industry?.color || "#8E44AD") : "#7F8C8D",
+                    textTransform:"uppercase",
+                    letterSpacing:"0.5px",
+                    background:cluster.isIndustry ? `${industry?.color || "#8E44AD"}08` : "#F7F9FC",
+                    borderTop:ci > 0 ? "1px solid #E8EDF2" : "none",
+                    marginTop:ci > 0 ? 4 : 0,
+                  }}>
+                    {cluster.label}
+                  </div>
+                  {/* Cluster Items */}
+                  {cluster.items.map((s) => {
+                    const sAns = s.questions.filter((_,qi)=>answers[`${s.id}_${qi}`]?.trim()).length;
+                    const active = activeSection===s.originalIndex && !showRecommendations;
+                    return (
+                      <div key={s.id} className="nav" onClick={()=>{setActiveSection(s.originalIndex);setShowRecommendations(false);setExportDone(false)}}
+                        style={{padding:"7px 16px 7px 24px",background:active?"#EBF5FB":"transparent",borderRight:active?"3px solid #2E86C1":"3px solid transparent",display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer",transition:"all .2s"}}>
+                        <span style={{fontSize:11,fontWeight:active?700:500,color:s.isIndustry?(industry?.color||"#1B3A5C"):"#1B3A5C",lineHeight:1.3,flex:1}}>{s.title.replace(/^[^\s]+\s/, '')}</span>
+                        <span style={{fontSize:10,color:sAns===s.questions.length&&sAns>0?"#27AE60":"#95A5A6",fontWeight:600,marginLeft:6,whiteSpace:"nowrap"}}>{sAns}/{s.questions.length}</span>
+                      </div>
+                    );
+                  })}
                 </div>
-              );
-            })}
+              ));
+            })()}
           </div>
 
           {/* Section Assignments (only for existing assessments) */}
@@ -1332,9 +1447,75 @@ export default function AIReadinessCheck({
           </div>
         </div>
 
-        {/* Main */}
-        <div ref={contentRef} style={{flex:1,padding:"28px 36px",maxWidth:780,overflowY:"auto"}}>
-          {exportDone ? (
+        {/* Main Content Area */}
+        <div style={{flex:1,display:"flex",gap:24,padding:"28px 36px",minWidth:0,overflowY:"auto"}}>
+          {/* Questions Column */}
+          <div ref={contentRef} style={{flex:1,maxWidth:exportDone || showRecommendations ? 780 : 640,minWidth:0}}>
+          {/* AI Recommendations View */}
+          {showRecommendations && assessment?.id ? (
+            <div style={{animation:"fadeUp .5s ease-out"}}>
+              <div style={{marginBottom:24}}>
+                <div style={{display:"inline-block",background:"linear-gradient(135deg,#8E44AD15,#9B59B615)",border:"1.5px solid #8E44AD40",borderRadius:7,padding:"3px 10px",fontSize:10,fontWeight:700,color:"#8E44AD",textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>
+                  KI-generiert
+                </div>
+                <h2 style={{fontSize:20,fontWeight:800,color:"#1B3A5C"}}>🤖 AI Empfehlungen</h2>
+                <p style={{fontSize:12,color:"#95A5A6",marginTop:3}}>
+                  Personalisierte Handlungsempfehlungen basierend auf Ihren Assessment-Antworten
+                </p>
+              </div>
+              
+              {/* Language Selector */}
+              <div style={{display:'flex',justifyContent:'flex-end',marginBottom:16}}>
+                <div style={{display:'flex',alignItems:'center',gap:8,background:'#fff',padding:'8px 12px',borderRadius:8,border:'1px solid #E8EDF2'}}>
+                  <span style={{fontSize:12,color:'#7F8C8D',fontWeight:500}}>🌐 Sprache:</span>
+                  <button
+                    onClick={() => setLanguage('de')}
+                    style={{
+                      padding:'4px 10px',
+                      borderRadius:6,
+                      border:'none',
+                      background:language==='de'?'#8E44AD':'transparent',
+                      color:language==='de'?'#fff':'#5D6D7E',
+                      fontSize:12,
+                      fontWeight:600,
+                      cursor:'pointer',
+                    }}
+                  >
+                    🇩🇪 DE
+                  </button>
+                  <button
+                    onClick={() => setLanguage('en')}
+                    style={{
+                      padding:'4px 10px',
+                      borderRadius:6,
+                      border:'none',
+                      background:language==='en'?'#8E44AD':'transparent',
+                      color:language==='en'?'#fff':'#5D6D7E',
+                      fontSize:12,
+                      fontWeight:600,
+                      cursor:'pointer',
+                    }}
+                  >
+                    🇬🇧 EN
+                  </button>
+                </div>
+              </div>
+              
+              {/* AI Recommendations Component */}
+              <Recommendations 
+                assessment={assessment}
+                answers={answers}
+                language={language}
+              />
+              
+              <div style={{textAlign:"center",marginTop:28,paddingBottom:32}}>
+                <button className="btn" onClick={()=>setShowRecommendations(false)}
+                  style={{background:"#fff",color:"#8E44AD",border:"2px solid #8E44AD",borderRadius:9,padding:"10px 28px",fontSize:13,fontWeight:600}}>
+                  ← Zurück zum Fragebogen
+                </button>
+              </div>
+            </div>
+          ) : exportDone ? (
             <div style={{animation:"fadeUp .5s ease-out"}}>
               <div style={{textAlign:"center",marginBottom:28}}>
                 <div style={{width:56,height:56,borderRadius:"50%",background:"linear-gradient(135deg,#27AE60,#1E8449)",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:28,marginBottom:12,color:"#fff"}}>✓</div>
@@ -1378,6 +1559,55 @@ export default function AIReadinessCheck({
                   </div>
                 );
               })()}
+
+              {/* Language Selector & AI Recommendations */}
+              {assessment?.id && (
+                <div style={{marginBottom:28}}>
+                  {/* Language Selector */}
+                  <div style={{display:'flex',justifyContent:'flex-end',marginBottom:16}}>
+                    <div style={{display:'flex',alignItems:'center',gap:8,background:'#fff',padding:'8px 12px',borderRadius:8,border:'1px solid #E8EDF2'}}>
+                      <span style={{fontSize:12,color:'#7F8C8D',fontWeight:500}}>🌐 Sprache:</span>
+                      <button
+                        onClick={() => setLanguage('de')}
+                        style={{
+                          padding:'4px 10px',
+                          borderRadius:6,
+                          border:'none',
+                          background:language==='de'?'#1B3A5C':'transparent',
+                          color:language==='de'?'#fff':'#5D6D7E',
+                          fontSize:12,
+                          fontWeight:600,
+                          cursor:'pointer',
+                        }}
+                      >
+                        🇩🇪 DE
+                      </button>
+                      <button
+                        onClick={() => setLanguage('en')}
+                        style={{
+                          padding:'4px 10px',
+                          borderRadius:6,
+                          border:'none',
+                          background:language==='en'?'#1B3A5C':'transparent',
+                          color:language==='en'?'#fff':'#5D6D7E',
+                          fontSize:12,
+                          fontWeight:600,
+                          cursor:'pointer',
+                        }}
+                      >
+                        🇬🇧 EN
+                      </button>
+                    </div>
+                  </div>
+                  
+                  {/* AI Recommendations Component */}
+                  <Recommendations 
+                    assessment={assessment}
+                    answers={answers}
+                    language={language}
+                  />
+                </div>
+              )}
 
               {allSections.map(s=>(
                 <div key={s.id} style={{marginBottom:20,background:"#fff",borderRadius:12,border:s.isIndustry?`2px solid ${industry?.color||"#2E86C1"}30`:"1px solid #E8EDF2",overflow:"hidden"}}>
@@ -1433,6 +1663,7 @@ export default function AIReadinessCheck({
                   <h2 style={{fontSize:20,fontWeight:800,color:"#1B3A5C"}}>{sec.title}</h2>
                   <p style={{fontSize:12,color:"#95A5A6",marginTop:3}}>Abschnitt {activeSection+1} von {allSections.length}</p>
                 </div>
+                
                 {sec.questions.map((q,qi)=>(
                   <div key={qi} style={{marginBottom:16,background:"#fff",borderRadius:11,padding:"18px 20px",border:"1px solid #E8EDF2",animation:`fadeUp .3s ease-out ${qi*.04}s both`}}>
                     <label style={{display:"block",fontSize:14,fontWeight:600,color:"#1B3A5C",marginBottom:4}}>{q.q}</label>
@@ -1459,7 +1690,22 @@ export default function AIReadinessCheck({
               </div>
             );
           })()}
+          </div>
+          
+          {/* Right Side: AI Recommendations Panel */}
+          {!exportDone && !showRecommendations && allSections[activeSection] && (
+            <div style={{width:340,flexShrink:0,position:"sticky",top:0,alignSelf:"flex-start"}}>
+              <SectionRecommendations
+                section={allSections[activeSection]}
+                answers={answers}
+                industry={industry}
+                language={language}
+                customerName={answers['general_0'] || assessment?.customer_name || ''}
+              />
+            </div>
+          )}
         </div>
+        
       </div>
     </div>
   );

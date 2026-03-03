@@ -1,31 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
+import { INDUSTRIES, STATUS_CONFIG, getIndustryInfo } from '../lib/constants';
+import { generatePDF } from '../lib/pdfExport';
 
-// Industry data for display
-const INDUSTRIES = {
-  insurance: { label: "Versicherungen", icon: "🛡️", color: "#1A5276" },
-  banking: { label: "Banken", icon: "🏦", color: "#2C3E50" },
-  healthcare: { label: "Gesundheitswesen", icon: "🏥", color: "#1ABC9C" },
-  automotive: { label: "Automotive", icon: "🚗", color: "#E74C3C" },
-  manufacturing: { label: "Manufacturing", icon: "⚙️", color: "#E67E22" },
-  retail: { label: "Handel / Retail", icon: "🛒", color: "#27AE60" },
-  energy: { label: "Energiewirtschaft", icon: "⚡", color: "#F39C12" },
-  publicSector: { label: "Öffentliche Verwaltung", icon: "🏛️", color: "#2980B9" },
-  lifeSciences: { label: "Life Sciences", icon: "💊", color: "#8E44AD" },
-  lottery: { label: "Lotterie / Gaming", icon: "🎰", color: "#D4AC0D" },
-  transport: { label: "Verkehr & Logistik", icon: "🚆", color: "#3498DB" },
-  media: { label: "Medien", icon: "🎬", color: "#9B59B6" },
-  defense: { label: "Defense", icon: "🎖️", color: "#566573" },
-  foodBeverage: { label: "Food & Beverage", icon: "🍽️", color: "#E74C3C" },
-  construction: { label: "Bauen & Wohnen", icon: "🏗️", color: "#DC7633" },
-  tradeFairsSports: { label: "Messen & Sports", icon: "🏟️", color: "#16A085" },
-  telecom: { label: "Telecom", icon: "📡", color: "#2980B9" },
-  professionalServices: { label: "Professional Services", icon: "💼", color: "#7D3C98" },
-  chemical: { label: "Chemie", icon: "🧪", color: "#117A65" },
-};
-
-export default function Dashboard({ onSelectAssessment, onCreateNew }) {
+export default function Dashboard({ onSelectAssessment, onCreateNew, onShowAnalytics }) {
   const { user, profile, signOut } = useAuth();
   const [assessments, setAssessments] = useState([]);
   const [myAssignments, setMyAssignments] = useState([]);
@@ -41,6 +21,13 @@ export default function Dashboard({ onSelectAssessment, onCreateNew }) {
   const [deleting, setDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [exporting, setExporting] = useState(false);
+  
+  // Search and filter state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterIndustry, setFilterIndustry] = useState('all');
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [sortBy, setSortBy] = useState('updated'); // 'updated', 'created', 'name', 'industry'
+  const [sortDirection, setSortDirection] = useState('desc');
 
   useEffect(() => {
     if (user) {
@@ -57,31 +44,59 @@ export default function Dashboard({ onSelectAssessment, onCreateNew }) {
 
   const fetchAssessments = async () => {
     try {
-      // Try to fetch with updated_by profile join
-      let { data, error } = await supabase
+      // Fetch assessments created by the current user
+      let { data: myData, error: myError } = await supabase
         .from('assessments')
         .select(`
           *,
           profiles:created_by (full_name, email)
         `)
+        .eq('created_by', user.id)
         .order('updated_at', { ascending: false });
 
       // If updated_at doesn't exist, try ordering by created_at
-      if (error && error.message?.includes('updated_at')) {
-        console.log('Trying without updated_at order:', error.message);
+      if (myError && myError.message?.includes('updated_at')) {
         const result = await supabase
           .from('assessments')
           .select(`
             *,
             profiles:created_by (full_name, email)
           `)
+          .eq('created_by', user.id)
           .order('created_at', { ascending: false });
         
-        data = result.data;
-        error = result.error;
+        myData = result.data;
+        myError = result.error;
       }
 
-      if (error) throw error;
+      if (myError) throw myError;
+
+      // Fetch section assignments for the current user to get assigned assessment IDs
+      const { data: assignments } = await supabase
+        .from('section_assignments')
+        .select('assessment_id')
+        .eq('assigned_to', user.id);
+
+      // Get unique assigned assessment IDs that are not already in myData
+      const myIds = (myData || []).map(a => a.id);
+      const assignedIds = [...new Set((assignments || []).map(a => a.assessment_id))].filter(id => !myIds.includes(id));
+      
+      // Fetch assigned assessments (that are not already created by user)
+      let assignedData = [];
+      if (assignedIds.length > 0) {
+        const { data: assigned } = await supabase
+          .from('assessments')
+          .select(`
+            *,
+            profiles:created_by (full_name, email)
+          `)
+          .in('id', assignedIds);
+        
+        assignedData = assigned || [];
+      }
+
+      // Combine: my assessments + assigned assessments (no duplicates)
+      let data = [...(myData || []), ...assignedData];
 
       // Now try to fetch updated_by profiles separately if updated_by exists
       if (data && data.length > 0 && data[0].updated_by !== undefined) {
@@ -191,13 +206,73 @@ export default function Dashboard({ onSelectAssessment, onCreateNew }) {
     setSelectedIds([]);
   };
 
-  // Computed values
-  const myAssessmentsFiltered = assessments.filter(a => a.created_by === user?.id);
+  // Computed values - base filter by ownership
+  const myAssessmentsBase = assessments.filter(a => a.created_by === user?.id);
+
+  // Apply search, filter, and sort
+  const applyFilters = (list) => {
+    let filtered = [...list];
+    
+    // Search filter
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(a => {
+        const customerMatch = a.customer_name?.toLowerCase().includes(query);
+        const industryLabel = INDUSTRIES[a.industry]?.label?.toLowerCase() || '';
+        const industryMatch = industryLabel.includes(query) || a.industry?.toLowerCase().includes(query);
+        return customerMatch || industryMatch;
+      });
+    }
+    
+    // Industry filter
+    if (filterIndustry !== 'all') {
+      filtered = filtered.filter(a => a.industry === filterIndustry);
+    }
+    
+    // Status filter
+    if (filterStatus !== 'all') {
+      filtered = filtered.filter(a => a.status === filterStatus);
+    }
+    
+    // Sort
+    filtered.sort((a, b) => {
+      let aVal, bVal;
+      switch (sortBy) {
+        case 'name':
+          aVal = a.customer_name?.toLowerCase() || '';
+          bVal = b.customer_name?.toLowerCase() || '';
+          break;
+        case 'industry':
+          aVal = INDUSTRIES[a.industry]?.label?.toLowerCase() || a.industry || '';
+          bVal = INDUSTRIES[b.industry]?.label?.toLowerCase() || b.industry || '';
+          break;
+        case 'updated':
+        default:
+          aVal = new Date(a.updated_at || a.created_at).getTime();
+          bVal = new Date(b.updated_at || b.created_at).getTime();
+          break;
+      }
+      
+      if (sortDirection === 'asc') {
+        return aVal > bVal ? 1 : aVal < bVal ? -1 : 0;
+      }
+      return aVal < bVal ? 1 : aVal > bVal ? -1 : 0;
+    });
+    
+    return filtered;
+  };
+
+  // Filtered lists
+  const myAssessmentsFiltered = useMemo(() => applyFilters(myAssessmentsBase), 
+    [myAssessmentsBase, searchQuery, filterIndustry, filterStatus, sortBy, sortDirection]);
+  
+  const allAssessmentsFiltered = useMemo(() => applyFilters(assessments), 
+    [assessments, searchQuery, filterIndustry, filterStatus, sortBy, sortDirection]);
 
   // Get current list based on active tab
   const getCurrentList = () => {
     if (activeTab === 'my') return myAssessmentsFiltered;
-    if (activeTab === 'all') return assessments;
+    if (activeTab === 'all') return allAssessmentsFiltered;
     return [];
   };
 
@@ -489,7 +564,22 @@ ${answers.length > 0 ? answers.map(a => `
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
           <div style={{ textAlign: 'right' }}>
             <div style={{ fontSize: 14, fontWeight: 600, color: '#1B3A5C' }}>
-              {profile?.full_name || user?.email}
+              {(() => {
+                // Try to get display name from full_name (if it's not the email)
+                if (profile?.full_name && !profile.full_name.includes('@')) {
+                  return profile.full_name;
+                }
+                // Extract first name from email (pattern: firstname.lastname@domain.com)
+                if (user?.email) {
+                  const emailPart = user.email.split('@')[0];
+                  const firstName = emailPart.split('.')[0];
+                  const lastName = emailPart.split('.')[1] || '';
+                  const formattedFirst = firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();
+                  const formattedLast = lastName ? lastName.charAt(0).toUpperCase() + lastName.slice(1).toLowerCase() : '';
+                  return formattedLast ? `${formattedFirst} ${formattedLast}` : formattedFirst;
+                }
+                return 'Berater';
+              })()}
             </div>
             <div style={{ fontSize: 12, color: '#7F8C8D' }}>
               {profile?.role === 'admin' ? 'Administrator' : 'Berater'}
@@ -509,7 +599,20 @@ ${answers.length > 0 ? answers.map(a => `
         {/* Welcome Section */}
         <div style={{ marginBottom: 32 }}>
           <h1 style={{ fontSize: 28, fontWeight: 800, color: '#1B3A5C', marginBottom: 8 }}>
-            Willkommen, {profile?.full_name?.split(' ')[0] || 'Berater'}! 👋
+            Willkommen, {(() => {
+              // Try to get first name from full_name (only if it's not an email)
+              if (profile?.full_name && !profile.full_name.includes('@')) {
+                return profile.full_name.split(' ')[0];
+              }
+              // Extract first name from email (pattern: firstname.lastname@domain.com)
+              if (user?.email) {
+                const emailPart = user.email.split('@')[0]; // Get part before @
+                const firstName = emailPart.split('.')[0]; // Get part before first dot
+                // Capitalize first letter
+                return firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();
+              }
+              return 'Berater';
+            })()}! 👋
           </h1>
           <p style={{ fontSize: 15, color: '#5D6D7E' }}>
             Verwalten Sie Ihre AI Readiness Assessments und arbeiten Sie mit Ihrem Team zusammen.
@@ -517,7 +620,7 @@ ${answers.length > 0 ? answers.map(a => `
         </div>
 
         {/* Stats */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, marginBottom: 32 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16, marginBottom: 32 }}>
           <div style={{ background: '#fff', borderRadius: 12, padding: 20, border: '1px solid #E8EDF2' }}>
             <div style={{ fontSize: 32, fontWeight: 800, color: '#1B3A5C' }}>{myAssessmentsFiltered.length}</div>
             <div style={{ fontSize: 13, color: '#7F8C8D' }}>Meine Assessments</div>
@@ -532,6 +635,27 @@ ${answers.length > 0 ? answers.map(a => `
             </div>
             <div style={{ fontSize: 13, color: '#7F8C8D' }}>Abgeschlossen</div>
           </div>
+          {/* Analytics Button */}
+          <Link 
+            to="/analytics"
+            style={{ 
+              background: 'linear-gradient(135deg, #8E44AD 0%, #9B59B6 100%)', 
+              borderRadius: 12, 
+              padding: 20, 
+              cursor: 'pointer',
+              transition: 'all 0.2s',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'center',
+              textDecoration: 'none'
+            }}
+            onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
+            onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+          >
+            <div style={{ fontSize: 28, marginBottom: 4 }}>📊</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#fff' }}>Analytics</div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.8)' }}>Alle Kunden vergleichen</div>
+          </Link>
         </div>
 
         {/* Actions */}
@@ -682,6 +806,136 @@ ${answers.length > 0 ? answers.map(a => `
                 🗑️ Löschen
               </button>
             </div>
+          </div>
+        )}
+
+        {/* Search and Filter Bar */}
+        {(activeTab === 'my' || activeTab === 'all') && (
+          <div style={{ 
+            background: '#fff', 
+            padding: '16px 20px', 
+            borderRadius: 12, 
+            marginBottom: 16,
+            border: '1px solid #E8EDF2',
+            display: 'flex',
+            gap: 12,
+            flexWrap: 'wrap',
+            alignItems: 'center'
+          }}>
+            {/* Search Input */}
+            <div style={{ flex: '1 1 200px', minWidth: 200 }}>
+              <input
+                type="text"
+                placeholder="🔍 Suchen nach Kunde oder Branche..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '10px 14px',
+                  border: '2px solid #E8EDF2',
+                  borderRadius: 10,
+                  fontSize: 13,
+                  fontFamily: 'Outfit, sans-serif',
+                  outline: 'none',
+                  transition: 'border-color 0.2s',
+                  boxSizing: 'border-box'
+                }}
+                onFocus={(e) => e.target.style.borderColor = '#2E86C1'}
+                onBlur={(e) => e.target.style.borderColor = '#E8EDF2'}
+              />
+            </div>
+            
+            {/* Industry Filter */}
+            <select
+              value={filterIndustry}
+              onChange={(e) => setFilterIndustry(e.target.value)}
+              style={{
+                padding: '10px 14px',
+                border: '2px solid #E8EDF2',
+                borderRadius: 10,
+                fontSize: 13,
+                fontFamily: 'Outfit, sans-serif',
+                background: '#fff',
+                cursor: 'pointer',
+                minWidth: 160
+              }}
+            >
+              <option value="all">Alle Branchen</option>
+              {Object.entries(INDUSTRIES).map(([key, ind]) => (
+                <option key={key} value={key}>{ind.icon} {ind.label}</option>
+              ))}
+            </select>
+            
+            {/* Status Filter */}
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              style={{
+                padding: '10px 14px',
+                border: '2px solid #E8EDF2',
+                borderRadius: 10,
+                fontSize: 13,
+                fontFamily: 'Outfit, sans-serif',
+                background: '#fff',
+                cursor: 'pointer',
+                minWidth: 140
+              }}
+            >
+              <option value="all">Alle Status</option>
+              <option value="draft">Entwurf</option>
+              <option value="in_progress">In Bearbeitung</option>
+              <option value="completed">Abgeschlossen</option>
+            </select>
+            
+            {/* Sort */}
+            <select
+              value={`${sortBy}_${sortDirection}`}
+              onChange={(e) => {
+                const [field, dir] = e.target.value.split('_');
+                setSortBy(field);
+                setSortDirection(dir);
+              }}
+              style={{
+                padding: '10px 14px',
+                border: '2px solid #E8EDF2',
+                borderRadius: 10,
+                fontSize: 13,
+                fontFamily: 'Outfit, sans-serif',
+                background: '#fff',
+                cursor: 'pointer',
+                minWidth: 160
+              }}
+            >
+              <option value="updated_desc">Neueste zuerst</option>
+              <option value="updated_asc">Älteste zuerst</option>
+              <option value="name_asc">Name A-Z</option>
+              <option value="name_desc">Name Z-A</option>
+              <option value="industry_asc">Branche A-Z</option>
+            </select>
+            
+            {/* Clear Filters */}
+            {(searchQuery || filterIndustry !== 'all' || filterStatus !== 'all') && (
+              <button
+                onClick={() => {
+                  setSearchQuery('');
+                  setFilterIndustry('all');
+                  setFilterStatus('all');
+                }}
+                style={{
+                  padding: '10px 14px',
+                  border: 'none',
+                  borderRadius: 10,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  fontFamily: 'Outfit, sans-serif',
+                  background: '#FDEDEC',
+                  color: '#E74C3C',
+                  cursor: 'pointer'
+                }}
+              >
+                ✕ Filter zurücksetzen
+              </button>
+            )}
           </div>
         )}
 

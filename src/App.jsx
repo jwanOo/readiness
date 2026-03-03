@@ -1,13 +1,134 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { BrowserRouter, Routes, Route, useNavigate, useLocation, useParams } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { supabase } from './lib/supabase';
 import Login from './components/Login';
 import Dashboard from './components/Dashboard';
 import AIReadinessCheck from './components/AIReadinessCheck';
+import Analytics from './components/Analytics';
 
-// Main App Content with Auth Check
+// Wrapper component to load assessment by ID from URL
+function AssessmentWrapper() {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const [assessment, setAssessment] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (id) {
+      loadAssessment(id);
+    } else {
+      setLoading(false);
+    }
+  }, [id]);
+
+  const loadAssessment = async (assessmentId) => {
+    try {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('assessments')
+        .select('*')
+        .eq('id', assessmentId)
+        .single();
+
+      if (error) throw error;
+      setAssessment(data);
+    } catch (err) {
+      console.error('Error loading assessment:', err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: '#F7F9FC',
+        fontFamily: 'Outfit, sans-serif'
+      }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>📋</div>
+          <div style={{ fontSize: 16, color: '#5D6D7E' }}>Lade Assessment...</div>
+          <div style={{ marginTop: 20 }}>
+            <div style={{
+              width: 40,
+              height: 40,
+              border: '3px solid #E8EDF2',
+              borderTop: '3px solid #2E86C1',
+              borderRadius: '50%',
+              animation: 'spin 1s linear infinite',
+              margin: '0 auto'
+            }} />
+          </div>
+          <style>{`
+            @keyframes spin {
+              0% { transform: rotate(0deg); }
+              100% { transform: rotate(360deg); }
+            }
+          `}</style>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: '#F7F9FC',
+        fontFamily: 'Outfit, sans-serif'
+      }}>
+        <div style={{ textAlign: 'center', maxWidth: 400 }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>❌</div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: '#1B3A5C', marginBottom: 8 }}>
+            Assessment nicht gefunden
+          </div>
+          <div style={{ fontSize: 14, color: '#7F8C8D', marginBottom: 24 }}>
+            Das angeforderte Assessment konnte nicht geladen werden.
+          </div>
+          <button
+            onClick={() => navigate('/')}
+            style={{
+              background: 'linear-gradient(135deg, #1B3A5C, #2E86C1)',
+              border: 'none',
+              borderRadius: 10,
+              padding: '12px 24px',
+              fontSize: 14,
+              fontWeight: 600,
+              color: '#fff',
+              cursor: 'pointer',
+            }}
+          >
+            ← Zurück zum Dashboard
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <AIReadinessCheck 
+      assessment={assessment}
+      onBack={() => navigate('/')}
+      onNavigateToDashboard={() => navigate('/')}
+    />
+  );
+}
+
+// Main App Content with Auth Check and Routing
 function AppContent() {
   const { isAuthenticated, loading, error, connectionStatus, retryConnection } = useAuth();
-  const [currentView, setCurrentView] = useState('dashboard'); // 'dashboard', 'assessment', or 'demo'
+  const navigate = useNavigate();
+  const location = useLocation();
   const [selectedAssessment, setSelectedAssessment] = useState(null);
   const [demoMode, setDemoMode] = useState(false);
   const [retrying, setRetrying] = useState(false);
@@ -202,91 +323,81 @@ function AppContent() {
     return <Login />;
   }
 
-  // Show dashboard or assessment based on current view
-  if (currentView === 'dashboard') {
-    return (
-      <Dashboard 
-        onSelectAssessment={(assessment) => {
-          setSelectedAssessment(assessment);
-          setCurrentView('assessment');
-        }}
-        onCreateNew={() => {
-          setSelectedAssessment(null);
-          setCurrentView('assessment');
-        }}
-      />
-    );
-  }
-
-  // Show the AI Readiness Check form
-  // For now, we'll use the existing component
-  // In the future, this will be enhanced to save to Supabase
+  // Render routes for authenticated users
   return (
-    <div>
-      {/* Back to Dashboard Button */}
-      <div style={{
-        position: 'fixed',
-        top: 16,
-        left: 16,
-        zIndex: 1000,
-      }}>
-        <button
-          onClick={() => setCurrentView('dashboard')}
-          style={{
-            background: '#fff',
-            border: '2px solid #E8EDF2',
-            borderRadius: 10,
-            padding: '10px 20px',
-            fontSize: 13,
-            fontWeight: 600,
-            color: '#2E86C1',
-            cursor: 'pointer',
-            fontFamily: 'Outfit, sans-serif',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-          }}
-        >
-          ← Dashboard
-        </button>
-      </div>
-      
-      {/* Assessment Info Banner (if editing existing) */}
-      {selectedAssessment && (
-        <div style={{
-          position: 'fixed',
-          top: 16,
-          left: '50%',
-          transform: 'translateX(-50%)',
-          zIndex: 1000,
-          background: '#fff',
-          border: '2px solid #E8EDF2',
-          borderRadius: 10,
-          padding: '10px 20px',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
-          fontFamily: 'Outfit, sans-serif',
-        }}>
-          <div style={{ fontSize: 12, color: '#7F8C8D' }}>Bearbeite Assessment für</div>
-          <div style={{ fontSize: 14, fontWeight: 700, color: '#1B3A5C' }}>
-            {selectedAssessment.customer_name}
-          </div>
-        </div>
-      )}
-      
-      <AIReadinessCheck 
-        assessment={selectedAssessment}
-        onBack={() => setCurrentView('dashboard')}
+    <Routes>
+      {/* Dashboard - Home */}
+      <Route 
+        path="/" 
+        element={
+          <Dashboard 
+            onSelectAssessment={(assessment) => {
+              // Navigate with assessment ID in URL for persistence on reload
+              navigate(`/assessment/${assessment.id}`);
+            }}
+            onCreateNew={() => {
+              setSelectedAssessment(null);
+              navigate('/assessment/new');
+            }}
+            onShowAnalytics={() => navigate('/analytics')}
+          />
+        } 
       />
-    </div>
+      
+      {/* Analytics Page */}
+      <Route 
+        path="/analytics" 
+        element={
+          <Analytics 
+            onBack={() => navigate('/')}
+            onSelectAssessment={(assessment) => {
+              // Navigate with assessment ID in URL for persistence on reload
+              navigate(`/assessment/${assessment.id}`);
+            }}
+          />
+        } 
+      />
+      
+      {/* New Assessment Page (no ID) */}
+      <Route 
+        path="/assessment/new" 
+        element={
+          <AIReadinessCheck 
+            assessment={null}
+            onBack={() => navigate('/')}
+            onNavigateToDashboard={() => navigate('/')}
+          />
+        } 
+      />
+      
+      {/* Assessment with ID - uses wrapper to load from database */}
+      <Route 
+        path="/assessment/:id" 
+        element={<AssessmentWrapper />} 
+      />
+      
+      {/* Fallback for /assessment without ID - redirect to new */}
+      <Route 
+        path="/assessment" 
+        element={
+          <AIReadinessCheck 
+            assessment={null}
+            onBack={() => navigate('/')}
+            onNavigateToDashboard={() => navigate('/')}
+          />
+        } 
+      />
+    </Routes>
   );
 }
 
-// Root App with Auth Provider
+// Root App with Auth Provider and Router
 export default function App() {
   return (
-    <AuthProvider>
-      <AppContent />
-    </AuthProvider>
+    <BrowserRouter basename="/ai-readiness-check/">
+      <AuthProvider>
+        <AppContent />
+      </AuthProvider>
+    </BrowserRouter>
   );
 }
