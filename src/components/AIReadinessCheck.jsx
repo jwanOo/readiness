@@ -1110,6 +1110,31 @@ export default function AIReadinessCheck({
 
   const industry = INDUSTRIES[selectedIndustry];
 
+  // Check if user can edit a specific section
+  const canEditSection = useCallback((sectionId) => {
+    // If no assessment, user is creating new - can edit everything
+    if (!assessment?.id) return true;
+    
+    // If user is the assessment owner, they can edit everything
+    if (assessment?.created_by === user?.id) return true;
+    
+    // Check if user is assigned to this section
+    const assignment = sectionAssignments[sectionId];
+    if (!assignment) return false;
+    
+    // Check if user is in the assignees list
+    const assignees = assignment.assignees || [];
+    if (assignees.includes(user?.id)) return true;
+    
+    // Check legacy assigned_to field
+    if (assignment.assigned_to === user?.id) return true;
+    
+    return false;
+  }, [assessment, user, sectionAssignments]);
+
+  // Check if user is the assessment owner
+  const isOwner = assessment?.created_by === user?.id || !assessment?.id;
+
   const filteredIndustries = Object.entries(INDUSTRIES).filter(([_, ind]) => {
     if (countryFilter !== "all" && !ind.country.includes(countryFilter)) return false;
     if (priorityFilter !== "all" && ind.priority !== priorityFilter) return false;
@@ -1656,24 +1681,108 @@ export default function AIReadinessCheck({
             </div>
           ) : allSections[activeSection] && (()=>{
             const sec=allSections[activeSection];
+            const canEdit = canEditSection(sec.id);
             return(
               <div style={{animation:"fadeUp .4s ease-out"}} key={sec.id}>
                 <div style={{marginBottom:24}}>
                   {sec.isIndustry&&<div style={{display:"inline-block",background:`${industry?.color}15`,border:`1.5px solid ${industry?.color}40`,borderRadius:7,padding:"3px 10px",fontSize:10,fontWeight:700,color:industry?.color,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Branchenspezifisch</div>}
                   <h2 style={{fontSize:20,fontWeight:800,color:"#1B3A5C"}}>{sec.title}</h2>
-                  <p style={{fontSize:12,color:"#95A5A6",marginTop:3}}>Abschnitt {activeSection+1} von {allSections.length}</p>
+                  <div style={{display:"flex",alignItems:"center",gap:12,marginTop:3}}>
+                    <p style={{fontSize:12,color:"#95A5A6"}}>Abschnitt {activeSection+1} von {allSections.length}</p>
+                    {!canEdit && (
+                      <span style={{
+                        display:"inline-flex",
+                        alignItems:"center",
+                        gap:4,
+                        padding:"3px 10px",
+                        background:"#FEF9E7",
+                        border:"1px solid #F39C12",
+                        borderRadius:12,
+                        fontSize:10,
+                        fontWeight:600,
+                        color:"#B7950B",
+                      }}>
+                        🔒 Nur Lesezugriff
+                      </span>
+                    )}
+                  </div>
                 </div>
                 
+                {/* Read-only notice */}
+                {!canEdit && (
+                  <div style={{
+                    background:"#FEF9E7",
+                    border:"1px solid #F39C1240",
+                    borderRadius:10,
+                    padding:"12px 16px",
+                    marginBottom:20,
+                    display:"flex",
+                    alignItems:"flex-start",
+                    gap:10,
+                  }}>
+                    <span style={{fontSize:18}}>🔒</span>
+                    <div>
+                      <div style={{fontSize:13,fontWeight:600,color:"#B7950B",marginBottom:2}}>
+                        Dieser Abschnitt ist für Sie schreibgeschützt
+                      </div>
+                      <div style={{fontSize:11,color:"#7F8C8D"}}>
+                        Sie können die Antworten einsehen, aber nicht bearbeiten. Nur zugewiesene Team-Mitglieder oder der Assessment-Ersteller können diesen Abschnitt bearbeiten.
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
                 {sec.questions.map((q,qi)=>(
-                  <div key={qi} style={{marginBottom:16,background:"#fff",borderRadius:11,padding:"18px 20px",border:"1px solid #E8EDF2",animation:`fadeUp .3s ease-out ${qi*.04}s both`}}>
+                  <div key={qi} style={{
+                    marginBottom:16,
+                    background:canEdit?"#fff":"#FAFBFC",
+                    borderRadius:11,
+                    padding:"18px 20px",
+                    border:canEdit?"1px solid #E8EDF2":"1px solid #E8EDF2",
+                    animation:`fadeUp .3s ease-out ${qi*.04}s both`,
+                    opacity:canEdit?1:0.85,
+                  }}>
                     <label style={{display:"block",fontSize:14,fontWeight:600,color:"#1B3A5C",marginBottom:4}}>{q.q}</label>
                     {q.hint&&<div style={{fontSize:11,color:"#95A5A6",marginBottom:8,fontStyle:"italic"}}>{q.hint}</div>}
                     {q.type==="text"?(
-                      <input type="text" value={answers[`${sec.id}_${qi}`]||""} onChange={e=>handleAnswer(sec.id,qi,e.target.value)} placeholder="Bitte eingeben..."
-                        style={{width:"100%",padding:"9px 12px",borderRadius:7,border:"1.5px solid #D5D8DC",fontSize:13,background:"#FAFBFC",transition:"all .2s"}}/>
+                      <input 
+                        type="text" 
+                        value={answers[`${sec.id}_${qi}`]||""} 
+                        onChange={e=>canEdit && handleAnswer(sec.id,qi,e.target.value)} 
+                        placeholder={canEdit?"Bitte eingeben...":"—"}
+                        readOnly={!canEdit}
+                        style={{
+                          width:"100%",
+                          padding:"9px 12px",
+                          borderRadius:7,
+                          border:"1.5px solid #D5D8DC",
+                          fontSize:13,
+                          background:canEdit?"#FAFBFC":"#F2F3F4",
+                          transition:"all .2s",
+                          cursor:canEdit?"text":"not-allowed",
+                          color:canEdit?"#2C3E50":"#7F8C8D",
+                        }}
+                      />
                     ):(
-                      <textarea value={answers[`${sec.id}_${qi}`]||""} onChange={e=>handleAnswer(sec.id,qi,e.target.value)} placeholder="Bitte beschreiben..." rows={3}
-                        style={{width:"100%",padding:"9px 12px",borderRadius:7,border:"1.5px solid #D5D8DC",fontSize:13,resize:"vertical",background:"#FAFBFC",transition:"all .2s"}}/>
+                      <textarea 
+                        value={answers[`${sec.id}_${qi}`]||""} 
+                        onChange={e=>canEdit && handleAnswer(sec.id,qi,e.target.value)} 
+                        placeholder={canEdit?"Bitte beschreiben...":"—"} 
+                        rows={3}
+                        readOnly={!canEdit}
+                        style={{
+                          width:"100%",
+                          padding:"9px 12px",
+                          borderRadius:7,
+                          border:"1.5px solid #D5D8DC",
+                          fontSize:13,
+                          resize:canEdit?"vertical":"none",
+                          background:canEdit?"#FAFBFC":"#F2F3F4",
+                          transition:"all .2s",
+                          cursor:canEdit?"text":"not-allowed",
+                          color:canEdit?"#2C3E50":"#7F8C8D",
+                        }}
+                      />
                     )}
                   </div>
                 ))}
