@@ -1185,8 +1185,12 @@ export default function AIReadinessCheck({
         <div style={{position:"relative",zIndex:1,maxWidth:"1060px",margin:"0 auto",padding:"40px 24px"}}>
           <div style={{textAlign:"center",marginBottom:"36px",animation:"fadeUp .6s ease-out"}}>
             <div style={{display:"inline-flex",alignItems:"center",gap:10,background:"linear-gradient(135deg,#1B3A5C,#2E86C1)",padding:"8px 22px",borderRadius:40,marginBottom:20}}>
-              <span style={{fontSize:20}}>🤖</span>
-              <span style={{color:"#fff",fontWeight:700,fontSize:13,letterSpacing:2,textTransform:"uppercase"}}>adesso AI Readiness Check</span>
+              <img 
+                src="https://companieslogo.com/img/orig/ADN1.DE-f6660428.png?t=1720244490" 
+                alt="adesso" 
+                style={{height:20,width:"auto",filter:"brightness(0) invert(1)"}}
+              />
+              <span style={{color:"#fff",fontWeight:700,fontSize:13,letterSpacing:2,textTransform:"uppercase"}}>AI Readiness Check</span>
             </div>
             <h1 style={{fontSize:"clamp(26px,3.5vw,38px)",fontWeight:800,color:"#1B3A5C",lineHeight:1.2,marginBottom:12}}>Branchenspezifischer AI Readiness Check</h1>
             <p style={{fontSize:15,color:"#5D6D7E",maxWidth:620,margin:"0 auto",lineHeight:1.6}}>
