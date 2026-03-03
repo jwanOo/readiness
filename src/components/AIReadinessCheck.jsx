@@ -678,10 +678,85 @@ const GaugeMeter = ({ value, label, sublabel }) => {
 };
 
 // ── EXPORT FUNCTIONS ──
-function buildExportHTML(allSections, answers, industry, rd, format) {
+// Translations for export
+const EXPORT_TRANSLATIONS = {
+  de: {
+    title: "SAP AI Readiness Check",
+    industry: "Branche",
+    date: "Datum",
+    answered: "Beantwortet",
+    general: "Allgemein",
+    aiReadinessAssessment: "AI Readiness Assessment",
+    sapSystem: "SAP System",
+    btpPlatform: "BTP & AI Platform",
+    dataMaturity: "Datenreife",
+    sapSub: "S/4HANA, Clean Core, Joule",
+    btpSub: "AI Core, Datasphere, BDC",
+    dataSub: "Qualität, Governance, DWH",
+    overallRating: "Gesamtbewertung",
+    aiReady: "AI-Ready ✓",
+    partiallyReady: "Teilweise bereit",
+    notReady: "Nicht bereit",
+    goodForAI: "Gut für SAP Business AI aufgestellt",
+    basicsPresent: "Grundlagen vorhanden — gezielte Maßnahmen empfohlen",
+    significantAction: "Erheblicher Handlungsbedarf vor KI-Einführung",
+    recommendations: "Empfehlungen",
+    sapMigration: "SAP-System: Migration auf S/4HANA und Clean-Core-Strategie empfohlen",
+    btpRequired: "BTP: SAP BTP mit AI Core und CPEA/BTPEA-Lizenzierung erforderlich",
+    dataStrategy: "Daten: Datenstrategie, Data Governance und zentrales DWH aufbauen",
+    sapJoule: "SAP: Joule aktivieren und Clean-Core-Strategie vorantreiben",
+    btpEvaluate: "BTP: SAP AI Core und SAP Business Data Cloud evaluieren",
+    dataGovernance: "Daten: Data Governance stärken und SAP Datasphere einführen",
+    sapReady: "SAP-System ist AI-ready",
+    btpReady: "BTP & AI Platform sind einsatzbereit",
+    dataReady: "Datenreife unterstützt KI-Initiativen",
+    industrySpecific: "Branchenspezifisch",
+    notAnswered: "— nicht beantwortet —",
+    footer: "SAP AI Readiness Check — erstellt mit AI Readiness Check Tool",
+    confidential: "VERTRAULICH",
+  },
+  en: {
+    title: "SAP AI Readiness Check",
+    industry: "Industry",
+    date: "Date",
+    answered: "Answered",
+    general: "General",
+    aiReadinessAssessment: "AI Readiness Assessment",
+    sapSystem: "SAP System",
+    btpPlatform: "BTP & AI Platform",
+    dataMaturity: "Data Maturity",
+    sapSub: "S/4HANA, Clean Core, Joule",
+    btpSub: "AI Core, Datasphere, BDC",
+    dataSub: "Quality, Governance, DWH",
+    overallRating: "Overall Rating",
+    aiReady: "AI-Ready ✓",
+    partiallyReady: "Partially Ready",
+    notReady: "Not Ready",
+    goodForAI: "Well positioned for SAP Business AI",
+    basicsPresent: "Basics in place — targeted measures recommended",
+    significantAction: "Significant action required before AI implementation",
+    recommendations: "Recommendations",
+    sapMigration: "SAP System: Migration to S/4HANA and Clean Core strategy recommended",
+    btpRequired: "BTP: SAP BTP with AI Core and CPEA/BTPEA licensing required",
+    dataStrategy: "Data: Data strategy, Data Governance and central DWH needed",
+    sapJoule: "SAP: Activate Joule and advance Clean Core strategy",
+    btpEvaluate: "BTP: Evaluate SAP AI Core and SAP Business Data Cloud",
+    dataGovernance: "Data: Strengthen Data Governance and introduce SAP Datasphere",
+    sapReady: "SAP System is AI-ready",
+    btpReady: "BTP & AI Platform are ready for use",
+    dataReady: "Data maturity supports AI initiatives",
+    industrySpecific: "Industry-specific",
+    notAnswered: "— not answered —",
+    footer: "SAP AI Readiness Check — created with AI Readiness Check Tool",
+    confidential: "CONFIDENTIAL",
+  }
+};
+
+function buildExportHTML(allSections, answers, industry, rd, format, lang = 'de') {
+  const t = EXPORT_TRANSLATIONS[lang] || EXPORT_TRANSLATIONS.de;
   const overall = Math.round((rd.sap + rd.btp + rd.data) / 3);
   const gaugeColor = (v) => v >= 66 ? "#27AE60" : v >= 33 ? "#F39C12" : "#E74C3C";
-  const gaugeLabel = (v) => v >= 66 ? "AI-Ready ✓" : v >= 33 ? "Teilweise bereit" : "Nicht bereit";
+  const gaugeLabel = (v) => v >= 66 ? t.aiReady : v >= 33 ? t.partiallyReady : t.notReady;
   const barHTML = (val, label, sub) => {
     const c = gaugeColor(val);
     return `<div style="flex:1;min-width:180px;text-align:center;padding:12px;">
@@ -694,15 +769,16 @@ function buildExportHTML(allSections, answers, industry, rd, format) {
     </div>`;
   };
   const overallColor = gaugeColor(overall);
+  const dateLocale = lang === 'en' ? 'en-GB' : 'de-DE';
 
   const wordMeta = format === "word" ? `
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
     <meta name="ProgId" content="Word.Document">
-    <meta name="Generator" content="adesso AI Readiness Check">
+    <meta name="Generator" content="AI Readiness Check">
     <!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View></w:WordDocument></xml><![endif]-->` : "";
 
   return `<!DOCTYPE html>
-<html lang="de"><head><meta charset="utf-8"><title>SAP AI Readiness Check — ${industry?.label || "Allgemein"}</title>${wordMeta}
+<html lang="${lang}"><head><meta charset="utf-8"><title>${t.title} — ${industry?.label || t.general}</title>${wordMeta}
 <style>
   @page { size: A4; margin: 20mm 18mm; }
   body { font-family: Calibri, Arial, Helvetica, sans-serif; color: #1B3A5C; font-size: 11pt; line-height: 1.5; margin: 0; padding: 20px; }
@@ -729,50 +805,50 @@ function buildExportHTML(allSections, answers, industry, rd, format) {
   .rec.green { background: #EAFAF1; color: #1E8449; }
 </style></head><body>
 
-<h1>${industry?.icon || "🤖"} SAP AI Readiness Check</h1>
+<h1>${industry?.icon || "🤖"} ${t.title}</h1>
 <div class="meta">
-  Branche: <strong>${industry?.label || "Allgemein"}</strong> &nbsp;|&nbsp;
-  Datum: <strong>${new Date().toLocaleDateString("de-DE")}</strong> &nbsp;|&nbsp;
-  Beantwortet: <strong>${Object.values(answers).filter(v => v?.trim()).length} / ${allSections.reduce((s, sec) => s + sec.questions.length, 0)}</strong>
+  ${t.industry}: <strong>${industry?.label || t.general}</strong> &nbsp;|&nbsp;
+  ${t.date}: <strong>${new Date().toLocaleDateString(dateLocale)}</strong> &nbsp;|&nbsp;
+  ${t.answered}: <strong>${Object.values(answers).filter(v => v?.trim()).length} / ${allSections.reduce((s, sec) => s + sec.questions.length, 0)}</strong>
 </div>
 
 <div class="assessment">
-  <h2 style="margin-top:0;border:none;">🎯 AI Readiness Assessment</h2>
+  <h2 style="margin-top:0;border:none;">🎯 ${t.aiReadinessAssessment}</h2>
   <div class="gauges">
-    ${barHTML(rd.sap, "SAP System", "S/4HANA, Clean Core, Joule")}
-    ${barHTML(rd.btp, "BTP & AI Platform", "AI Core, Datasphere, BDC")}
-    ${barHTML(rd.data, "Datenreife", "Qualität, Governance, DWH")}
+    ${barHTML(rd.sap, t.sapSystem, t.sapSub)}
+    ${barHTML(rd.btp, t.btpPlatform, t.btpSub)}
+    ${barHTML(rd.data, t.dataMaturity, t.dataSub)}
   </div>
   <div class="overall" style="background:${overall >= 66 ? "#EAFAF1" : overall >= 33 ? "#FEF9E7" : "#FDEDEC"};border:1.5px solid ${overallColor}40;">
-    <div style="font-size:10pt;color:#5D6D7E;">Gesamtbewertung</div>
+    <div style="font-size:10pt;color:#5D6D7E;">${t.overallRating}</div>
     <div style="font-size:22pt;font-weight:800;color:${overallColor};">${overall}%</div>
     <div style="font-size:10pt;color:${overallColor};font-weight:600;">
-      ${overall >= 66 ? "Gut für SAP Business AI aufgestellt" : overall >= 33 ? "Grundlagen vorhanden — gezielte Maßnahmen empfohlen" : "Erheblicher Handlungsbedarf vor KI-Einführung"}
+      ${overall >= 66 ? t.goodForAI : overall >= 33 ? t.basicsPresent : t.significantAction}
     </div>
   </div>
   <div style="margin-top:10px;">
-    <strong style="font-size:10pt;">Empfehlungen:</strong>
-    ${rd.sap < 33 ? '<div class="rec red">⚠️ SAP-System: Migration auf S/4HANA und Clean-Core-Strategie empfohlen</div>' : ""}
-    ${rd.btp < 33 ? '<div class="rec red">⚠️ BTP: SAP BTP mit AI Core und CPEA/BTPEA-Lizenzierung erforderlich</div>' : ""}
-    ${rd.data < 33 ? '<div class="rec red">⚠️ Daten: Datenstrategie, Data Governance und zentrales DWH aufbauen</div>' : ""}
-    ${rd.sap >= 33 && rd.sap < 66 ? '<div class="rec yellow">💡 SAP: Joule aktivieren und Clean-Core-Strategie vorantreiben</div>' : ""}
-    ${rd.btp >= 33 && rd.btp < 66 ? '<div class="rec yellow">💡 BTP: SAP AI Core und SAP Business Data Cloud evaluieren</div>' : ""}
-    ${rd.data >= 33 && rd.data < 66 ? '<div class="rec yellow">💡 Daten: Data Governance stärken und SAP Datasphere einführen</div>' : ""}
-    ${rd.sap >= 66 ? '<div class="rec green">✅ SAP-System ist AI-ready</div>' : ""}
-    ${rd.btp >= 66 ? '<div class="rec green">✅ BTP & AI Platform sind einsatzbereit</div>' : ""}
-    ${rd.data >= 66 ? '<div class="rec green">✅ Datenreife unterstützt KI-Initiativen</div>' : ""}
+    <strong style="font-size:10pt;">${t.recommendations}:</strong>
+    ${rd.sap < 33 ? `<div class="rec red">⚠️ ${t.sapMigration}</div>` : ""}
+    ${rd.btp < 33 ? `<div class="rec red">⚠️ ${t.btpRequired}</div>` : ""}
+    ${rd.data < 33 ? `<div class="rec red">⚠️ ${t.dataStrategy}</div>` : ""}
+    ${rd.sap >= 33 && rd.sap < 66 ? `<div class="rec yellow">💡 ${t.sapJoule}</div>` : ""}
+    ${rd.btp >= 33 && rd.btp < 66 ? `<div class="rec yellow">💡 ${t.btpEvaluate}</div>` : ""}
+    ${rd.data >= 33 && rd.data < 66 ? `<div class="rec yellow">💡 ${t.dataGovernance}</div>` : ""}
+    ${rd.sap >= 66 ? `<div class="rec green">✅ ${t.sapReady}</div>` : ""}
+    ${rd.btp >= 66 ? `<div class="rec green">✅ ${t.btpReady}</div>` : ""}
+    ${rd.data >= 66 ? `<div class="rec green">✅ ${t.dataReady}</div>` : ""}
   </div>
 </div>
 
 ${allSections.map(s => `
   <div class="section">
-    <div class="section-header${s.isIndustry ? " industry" : ""}">${s.title}${s.isIndustry ? ' <span class="tag" style="background:rgba(255,255,255,0.3);color:white;margin-left:8px;">Branchenspezifisch</span>' : ""}</div>
+    <div class="section-header${s.isIndustry ? " industry" : ""}">${s.title}${s.isIndustry ? ` <span class="tag" style="background:rgba(255,255,255,0.3);color:white;margin-left:8px;">${t.industrySpecific}</span>` : ""}</div>
     <table>
       ${s.questions.map((q, qi) => {
         const ans = answers[`${s.id}_${qi}`];
         return `<tr>
           <th>${q.q}${q.hint ? `<br><span style="font-weight:400;color:#95A5A6;font-size:9pt;">${q.hint}</span>` : ""}</th>
-          <td${!ans?.trim() ? ' class="empty"' : ""}>${ans?.trim() || "— nicht beantwortet —"}</td>
+          <td${!ans?.trim() ? ' class="empty"' : ""}>${ans?.trim() || t.notAnswered}</td>
         </tr>`;
       }).join("")}
     </table>
@@ -780,13 +856,13 @@ ${allSections.map(s => `
 `).join("")}
 
 <div class="footer">
-  SAP AI Readiness Check — erstellt mit adesso AI Readiness Check Tool — ${new Date().toLocaleDateString("de-DE")} — VERTRAULICH
+  ${t.footer} — ${new Date().toLocaleDateString(dateLocale)} — ${t.confidential}
 </div>
 </body></html>`;
 }
 
-function exportToWord(allSections, answers, industry, rd) {
-  const html = buildExportHTML(allSections, answers, industry, rd, "word");
+function exportToWord(allSections, answers, industry, rd, lang = 'de') {
+  const html = buildExportHTML(allSections, answers, industry, rd, "word", lang);
   const blob = new Blob(["\ufeff", html], { type: "application/msword" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -798,10 +874,11 @@ function exportToWord(allSections, answers, industry, rd) {
   URL.revokeObjectURL(url);
 }
 
-function exportToPDF(allSections, answers, industry, rd) {
-  const html = buildExportHTML(allSections, answers, industry, rd, "pdf");
+function exportToPDF(allSections, answers, industry, rd, lang = 'de') {
+  const html = buildExportHTML(allSections, answers, industry, rd, "pdf", lang);
   const printWin = window.open("", "_blank", "width=900,height=700");
-  if (!printWin) { alert("Bitte erlauben Sie Pop-ups für den PDF-Export."); return; }
+  const alertMsg = lang === 'en' ? "Please allow pop-ups for PDF export." : "Bitte erlauben Sie Pop-ups für den PDF-Export.";
+  if (!printWin) { alert(alertMsg); return; }
   printWin.document.write(html);
   printWin.document.close();
   setTimeout(() => {
@@ -1674,25 +1751,38 @@ export default function AIReadinessCheck({
                 </div>
               ))}
               <div style={{textAlign:"center",marginTop:20,paddingBottom:32}}>
+                {/* Export Language Info */}
+                <div style={{marginBottom:16,padding:"10px 16px",background:"#EBF5FB",borderRadius:10,display:"inline-flex",alignItems:"center",gap:8}}>
+                  <span style={{fontSize:14}}>🌐</span>
+                  <span style={{fontSize:12,color:"#2E86C1",fontWeight:500}}>
+                    {language === 'de' ? 'Export in Deutsch' : 'Export in English'}
+                  </span>
+                  <span style={{fontSize:11,color:"#7F8C8D"}}>
+                    ({language === 'de' ? 'Sprache oben ändern' : 'Change language above'})
+                  </span>
+                </div>
+                
                 {/* Export buttons */}
                 <div style={{display:"flex",gap:12,justifyContent:"center",flexWrap:"wrap",marginBottom:16}}>
                   <button className="btn" onClick={() => {
                     const rd = computeReadinessFromAnswers(answers);
-                    exportToWord(allSections, answers, industry, rd);
+                    exportToWord(allSections, answers, industry, rd, language);
                   }}
                     style={{background:"linear-gradient(135deg,#2471A3,#2E86C1)",color:"#fff",border:"none",borderRadius:10,padding:"12px 28px",fontSize:13,fontWeight:700,display:"flex",alignItems:"center",gap:8,boxShadow:"0 4px 14px rgba(46,134,193,0.2)"}}>
-                    <span style={{fontSize:18}}>📝</span> Word exportieren (.doc)
+                    <span style={{fontSize:18}}>📝</span> {language === 'de' ? 'Word exportieren (.doc)' : 'Export Word (.doc)'}
                   </button>
                   <button className="btn" onClick={() => {
                     const rd = computeReadinessFromAnswers(answers);
-                    exportToPDF(allSections, answers, industry, rd);
+                    exportToPDF(allSections, answers, industry, rd, language);
                   }}
                     style={{background:"linear-gradient(135deg,#C0392B,#E74C3C)",color:"#fff",border:"none",borderRadius:10,padding:"12px 28px",fontSize:13,fontWeight:700,display:"flex",alignItems:"center",gap:8,boxShadow:"0 4px 14px rgba(231,76,60,0.2)"}}>
-                    <span style={{fontSize:18}}>📄</span> PDF exportieren
+                    <span style={{fontSize:18}}>📄</span> {language === 'de' ? 'PDF exportieren' : 'Export PDF'}
                   </button>
                 </div>
                 <p style={{fontSize:11,color:"#95A5A6",marginBottom:16}}>
-                  Word-Datei wird direkt heruntergeladen. PDF öffnet den Druckdialog — wählen Sie dort "Als PDF speichern".
+                  {language === 'de' 
+                    ? 'Word-Datei wird direkt heruntergeladen. PDF öffnet den Druckdialog — wählen Sie dort "Als PDF speichern".'
+                    : 'Word file downloads directly. PDF opens print dialog — select "Save as PDF" there.'}
                 </p>
                 <button className="btn" onClick={()=>setExportDone(false)}
                   style={{background:"#fff",color:"#2E86C1",border:"2px solid #2E86C1",borderRadius:9,padding:"10px 28px",fontSize:13,fontWeight:600}}>
