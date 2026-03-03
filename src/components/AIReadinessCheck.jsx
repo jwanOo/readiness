@@ -1460,8 +1460,8 @@ export default function AIReadinessCheck({
             })()}
           </div>
 
-          {/* Section Assignments (only for existing assessments) */}
-          {assessment?.id && collaborators.length > 0 && (
+          {/* Section Assignments (only for assessment owner) */}
+          {assessment?.id && isOwner && collaborators.length > 0 && (
             <div style={{padding:"12px 16px",borderTop:"1px solid #E8EDF2"}}>
               <div style={{fontSize:11,fontWeight:700,color:"#1B3A5C",marginBottom:8}}>👥 Team-Zuweisung für diesen Abschnitt</div>
               <MultiSelectDropdown
