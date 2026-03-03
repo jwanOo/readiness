@@ -113,6 +113,11 @@ export default function SectionAIPanel({
   assessmentId = null,
 }) {
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [showChatList, setShowChatList] = useState(false);
+  
+  // Multi-chat support
+  const [chatSessions, setChatSessions] = useState([]);
+  const [activeSessionId, setActiveSessionId] = useState(null);
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
@@ -124,39 +129,127 @@ export default function SectionAIPanel({
   const [dbLoading, setDbLoading] = useState(false);
   const [lastDbRefresh, setLastDbRefresh] = useState(null);
 
-  // Storage key for chat history
-  const getChatStorageKey = () => {
+  // Storage key for all chat sessions
+  const getSessionsStorageKey = () => {
     if (!userId || !assessmentId) return null;
-    return `ai_chat_${userId}_${assessmentId}`;
+    return `ai_chat_sessions_${userId}_${assessmentId}`;
   };
 
-  // Load chat history
+  // Load all chat sessions
   useEffect(() => {
-    const storageKey = getChatStorageKey();
+    const storageKey = getSessionsStorageKey();
     if (storageKey) {
       try {
-        const savedChat = localStorage.getItem(storageKey);
-        if (savedChat) {
-          const parsed = JSON.parse(savedChat);
-          if (Array.isArray(parsed)) setChatMessages(parsed);
+        const savedSessions = localStorage.getItem(storageKey);
+        if (savedSessions) {
+          const parsed = JSON.parse(savedSessions);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setChatSessions(parsed);
+            // Load the most recent session
+            const mostRecent = parsed.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))[0];
+            setActiveSessionId(mostRecent.id);
+            setChatMessages(mostRecent.messages || []);
+          } else {
+            // Create initial session
+            createNewSession(true);
+          }
+        } else {
+          // Create initial session
+          createNewSession(true);
         }
       } catch (e) {
-        console.warn('Could not load chat history:', e);
+        console.warn('Could not load chat sessions:', e);
+        createNewSession(true);
       }
     }
   }, [userId, assessmentId]);
 
-  // Save chat history
+  // Save chat sessions whenever they change
   useEffect(() => {
-    const storageKey = getChatStorageKey();
-    if (storageKey && chatMessages.length > 0) {
+    const storageKey = getSessionsStorageKey();
+    if (storageKey && chatSessions.length > 0) {
       try {
-        localStorage.setItem(storageKey, JSON.stringify(chatMessages));
+        localStorage.setItem(storageKey, JSON.stringify(chatSessions));
       } catch (e) {
-        console.warn('Could not save chat history:', e);
+        console.warn('Could not save chat sessions:', e);
       }
     }
-  }, [chatMessages, userId, assessmentId]);
+  }, [chatSessions, userId, assessmentId]);
+
+  // Update current session messages when chatMessages change
+  useEffect(() => {
+    if (activeSessionId && chatMessages.length > 0) {
+      setChatSessions(prev => prev.map(session => 
+        session.id === activeSessionId 
+          ? { 
+              ...session, 
+              messages: chatMessages, 
+              updatedAt: new Date().toISOString(),
+              title: session.title || generateSessionTitle(chatMessages),
+            }
+          : session
+      ));
+    }
+  }, [chatMessages, activeSessionId]);
+
+  // Generate a title from the first user message
+  const generateSessionTitle = (messages) => {
+    const firstUserMsg = messages.find(m => m.role === 'user');
+    if (firstUserMsg) {
+      const title = firstUserMsg.content.slice(0, 40);
+      return title.length < firstUserMsg.content.length ? title + '...' : title;
+    }
+    return language === 'de' ? 'Neuer Chat' : 'New Chat';
+  };
+
+  // Create a new chat session
+  const createNewSession = (isInitial = false) => {
+    const newSession = {
+      id: `session_${Date.now()}`,
+      title: language === 'de' ? 'Neuer Chat' : 'New Chat',
+      messages: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    
+    if (isInitial) {
+      setChatSessions([newSession]);
+    } else {
+      setChatSessions(prev => [newSession, ...prev]);
+    }
+    setActiveSessionId(newSession.id);
+    setChatMessages([]);
+    setShowChatList(false);
+  };
+
+  // Switch to a different session
+  const switchSession = (sessionId) => {
+    const session = chatSessions.find(s => s.id === sessionId);
+    if (session) {
+      setActiveSessionId(sessionId);
+      setChatMessages(session.messages || []);
+      setShowChatList(false);
+    }
+  };
+
+  // Delete a session
+  const deleteSession = (sessionId, e) => {
+    e.stopPropagation();
+    const remaining = chatSessions.filter(s => s.id !== sessionId);
+    
+    if (remaining.length === 0) {
+      // Create a new session if we deleted the last one
+      createNewSession(true);
+    } else {
+      setChatSessions(remaining);
+      // If we deleted the active session, switch to the most recent
+      if (sessionId === activeSessionId) {
+        const mostRecent = remaining.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))[0];
+        setActiveSessionId(mostRecent.id);
+        setChatMessages(mostRecent.messages || []);
+      }
+    }
+  };
 
   // Load database context for RAG
   useEffect(() => {
@@ -685,26 +778,54 @@ Sei prägnant und hilfreich. Antworte auf Deutsch.`;
         alignItems: 'center',
         justifyContent: 'space-between',
       }}>
-        <button
-          onClick={() => setIsCollapsed(true)}
-          style={{
-            background: 'transparent',
-            border: 'none',
-            padding: 8,
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            borderRadius: 8,
-            transition: 'background 0.2s',
-          }}
-          onMouseOver={(e) => e.currentTarget.style.background = '#F7F9FC'}
-          onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}
-        >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-            <path d="M6 9L12 15L18 9" stroke="#5D6D7E" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-        </button>
+        <div style={{ display: 'flex', gap: 4 }}>
+          <button
+            onClick={() => setIsCollapsed(true)}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              padding: 8,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: 8,
+              transition: 'background 0.2s',
+            }}
+            onMouseOver={(e) => e.currentTarget.style.background = '#F7F9FC'}
+            onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}
+            title={language === 'de' ? 'Minimieren' : 'Minimize'}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+              <path d="M6 9L12 15L18 9" stroke="#5D6D7E" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </button>
+          {/* Chat history button */}
+          <button
+            onClick={() => setShowChatList(!showChatList)}
+            style={{
+              background: showChatList ? '#EBF5FB' : 'transparent',
+              border: 'none',
+              padding: 8,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: 8,
+              transition: 'background 0.2s',
+            }}
+            onMouseOver={(e) => !showChatList && (e.currentTarget.style.background = '#F7F9FC')}
+            onMouseOut={(e) => !showChatList && (e.currentTarget.style.background = 'transparent')}
+            title={language === 'de' ? 'Chat-Verlauf' : 'Chat history'}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+              <path d="M19 3H5C3.89543 3 3 3.89543 3 5V19C3 20.1046 3.89543 21 5 21H19C20.1046 21 21 20.1046 21 19V5C21 3.89543 20.1046 3 19 3Z" stroke={showChatList ? '#2E86C1' : '#5D6D7E'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M7 7H17" stroke={showChatList ? '#2E86C1' : '#5D6D7E'} strokeWidth="2" strokeLinecap="round"/>
+              <path d="M7 11H17" stroke={showChatList ? '#2E86C1' : '#5D6D7E'} strokeWidth="2" strokeLinecap="round"/>
+              <path d="M7 15H13" stroke={showChatList ? '#2E86C1' : '#5D6D7E'} strokeWidth="2" strokeLinecap="round"/>
+            </svg>
+          </button>
+        </div>
         
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
@@ -738,6 +859,29 @@ Sei prägnant und hilfreich. Antworte auf Deutsch.`;
         </div>
         
         <div style={{ display: 'flex', gap: 4 }}>
+          {/* New chat button */}
+          <button
+            onClick={() => createNewSession()}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              padding: 8,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: 8,
+              transition: 'background 0.2s',
+            }}
+            onMouseOver={(e) => e.currentTarget.style.background = '#F7F9FC'}
+            onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}
+            title={language === 'de' ? 'Neuer Chat' : 'New chat'}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+              <path d="M12 5V19" stroke="#5D6D7E" strokeWidth="2" strokeLinecap="round"/>
+              <path d="M5 12H19" stroke="#5D6D7E" strokeWidth="2" strokeLinecap="round"/>
+            </svg>
+          </button>
           {/* Refresh database button */}
           <button
             onClick={handleRefreshDb}
@@ -763,27 +907,6 @@ Sei prägnant und hilfreich. Antworte auf Deutsch.`;
               <path d="M21 3V7H17" stroke="#5D6D7E" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
           </button>
-          <button
-            style={{
-              background: 'transparent',
-              border: 'none',
-              padding: 8,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              borderRadius: 8,
-              transition: 'background 0.2s',
-            }}
-            onMouseOver={(e) => e.currentTarget.style.background = '#F7F9FC'}
-            onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-              <circle cx="12" cy="6" r="1.5" fill="#5D6D7E"/>
-              <circle cx="12" cy="12" r="1.5" fill="#5D6D7E"/>
-              <circle cx="12" cy="18" r="1.5" fill="#5D6D7E"/>
-            </svg>
-          </button>
         </div>
       </div>
       
@@ -793,6 +916,177 @@ Sei prägnant und hilfreich. Antworte auf Deutsch.`;
           100% { transform: rotate(360deg); }
         }
       `}</style>
+
+      {/* Chat List Sidebar */}
+      {showChatList && (
+        <div style={{
+          position: 'absolute',
+          top: 60,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: '#fff',
+          zIndex: 10,
+          display: 'flex',
+          flexDirection: 'column',
+        }}>
+          {/* Chat list header */}
+          <div style={{
+            padding: '16px',
+            borderBottom: '1px solid #E8EDF2',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+          }}>
+            <div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: '#1B3A5C' }}>
+                {language === 'de' ? 'Chat-Verlauf' : 'Chat History'}
+              </div>
+              <div style={{ fontSize: 11, color: '#95A5A6', marginTop: 2 }}>
+                {chatSessions.length} {language === 'de' ? 'Gespräche' : 'conversations'}
+              </div>
+            </div>
+            <button
+              onClick={() => createNewSession()}
+              style={{
+                background: 'linear-gradient(135deg, #1B3A5C, #2E86C1)',
+                border: 'none',
+                borderRadius: 8,
+                padding: '8px 14px',
+                fontSize: 12,
+                fontWeight: 600,
+                color: '#fff',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                <path d="M12 5V19" stroke="#fff" strokeWidth="2" strokeLinecap="round"/>
+                <path d="M5 12H19" stroke="#fff" strokeWidth="2" strokeLinecap="round"/>
+              </svg>
+              {language === 'de' ? 'Neuer Chat' : 'New Chat'}
+            </button>
+          </div>
+          
+          {/* Chat sessions list */}
+          <div style={{ flex: 1, overflowY: 'auto', padding: '8px' }}>
+            {chatSessions.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: 40, color: '#95A5A6' }}>
+                <div style={{ fontSize: 32, marginBottom: 12 }}>💬</div>
+                <div style={{ fontSize: 13 }}>
+                  {language === 'de' ? 'Noch keine Chats' : 'No chats yet'}
+                </div>
+              </div>
+            ) : (
+              chatSessions
+                .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
+                .map((session) => (
+                  <div
+                    key={session.id}
+                    onClick={() => switchSession(session.id)}
+                    style={{
+                      padding: '12px 14px',
+                      borderRadius: 10,
+                      marginBottom: 6,
+                      cursor: 'pointer',
+                      background: session.id === activeSessionId ? '#EBF5FB' : '#F7F9FC',
+                      border: session.id === activeSessionId ? '2px solid #2E86C1' : '2px solid transparent',
+                      transition: 'all 0.2s',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'flex-start',
+                    }}
+                    onMouseOver={(e) => {
+                      if (session.id !== activeSessionId) {
+                        e.currentTarget.style.background = '#F0F3F4';
+                      }
+                    }}
+                    onMouseOut={(e) => {
+                      if (session.id !== activeSessionId) {
+                        e.currentTarget.style.background = '#F7F9FC';
+                      }
+                    }}
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{
+                        fontSize: 13,
+                        fontWeight: 600,
+                        color: '#1B3A5C',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}>
+                        {session.title || (language === 'de' ? 'Neuer Chat' : 'New Chat')}
+                      </div>
+                      <div style={{
+                        fontSize: 11,
+                        color: '#95A5A6',
+                        marginTop: 4,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                      }}>
+                        <span>{session.messages?.length || 0} {language === 'de' ? 'Nachrichten' : 'messages'}</span>
+                        <span>•</span>
+                        <span>{new Date(session.updatedAt).toLocaleDateString('de-DE')}</span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={(e) => deleteSession(session.id, e)}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        padding: 6,
+                        cursor: 'pointer',
+                        borderRadius: 6,
+                        color: '#BDC3C7',
+                        transition: 'all 0.2s',
+                        flexShrink: 0,
+                      }}
+                      onMouseOver={(e) => {
+                        e.currentTarget.style.background = '#FDEDEC';
+                        e.currentTarget.style.color = '#E74C3C';
+                      }}
+                      onMouseOut={(e) => {
+                        e.currentTarget.style.background = 'transparent';
+                        e.currentTarget.style.color = '#BDC3C7';
+                      }}
+                      title={language === 'de' ? 'Löschen' : 'Delete'}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                        <path d="M3 6H5H21" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                        <path d="M8 6V4C8 3.44772 8.44772 3 9 3H15C15.5523 3 16 3.44772 16 4V6" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                        <path d="M19 6V20C19 20.5523 18.5523 21 18 21H6C5.44772 21 5 20.5523 5 20V6" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                      </svg>
+                    </button>
+                  </div>
+                ))
+            )}
+          </div>
+          
+          {/* Close button */}
+          <div style={{ padding: 12, borderTop: '1px solid #E8EDF2' }}>
+            <button
+              onClick={() => setShowChatList(false)}
+              style={{
+                width: '100%',
+                padding: '10px',
+                borderRadius: 8,
+                border: '1px solid #E8EDF2',
+                background: '#fff',
+                fontSize: 13,
+                fontWeight: 500,
+                color: '#5D6D7E',
+                cursor: 'pointer',
+              }}
+            >
+              {language === 'de' ? 'Schließen' : 'Close'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Chat Messages */}
       <div 
