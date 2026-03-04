@@ -1,19 +1,46 @@
 # 🤖 AI Readiness Check - Enterprise Edition
 
-A comprehensive SAP AI Readiness assessment tool for adesso consultants, featuring:
+A comprehensive SAP AI Readiness assessment tool featuring AI-powered recommendations, intelligent chat assistants, and collaborative assessment capabilities.
+
+🌐 **Live Demo:** [https://jwanoo.github.io/readiness/](https://jwanoo.github.io/readiness/)
+
+## ✨ Key Features
+
+### 🤖 AI-Powered Features
+- **Silava AI Assistant** - Floating chat assistant with streaming responses
+  - Multi-conversation support (create, switch, delete chat sessions)
+  - Chat titles auto-generated from first user prompt
+  - Context-aware responses based on current section and answers
+  - RAG integration with Supabase database
+  - Supports both German and English
+
+- **Smart AI Recommendations** - Real-time, section-specific recommendations
+  - Analyzes answers as you type
+  - Provides 4 actionable insights per section
+  - Background processing without interrupting workflow
+  - Industry-specific recommendations
+
+### 📊 Assessment Features
 - 🔐 **User Authentication** (Email/Password, Magic Link)
 - 👥 **Collaborative Assessments** - Multiple team members can work on different sections
-- 📊 **19 Industry-specific questionnaires** (Insurance, Banking, Healthcare, etc.)
-- 📈 **Automated AI Readiness Scoring**
-- 📄 **Export to Word/PDF**
-- 🔄 **Real-time collaboration** (coming soon)
+- 📊 **20+ Industry-specific questionnaires** (Insurance, Banking, Healthcare, etc.)
+- 📈 **Automated AI Readiness Scoring** (SAP, BTP, Data dimensions)
+- 📄 **Bilingual Export** - Word/PDF in German or English
+- 📈 **Analytics Dashboard** - Customer insights and comparisons
+
+### 🎨 User Experience
+- Modern, responsive UI with Outfit font
+- Dark/Light mode support
+- Real-time progress tracking
+- Sticky navigation sidebar
+- Mobile-friendly design
 
 ## 🚀 Quick Start
 
 ### 1. Clone and Install
 ```bash
-git clone https://github.com/jwanOo/ai-readiness-check.git
-cd ai-readiness-check
+git clone https://github.com/jwanOo/readiness.git
+cd readiness
 npm install
 ```
 
@@ -47,21 +74,31 @@ Open [http://localhost:5173](http://localhost:5173)
 ## 📁 Project Structure
 
 ```
-ai-readiness-check/
+readiness/
 ├── src/
 │   ├── components/
-│   │   ├── AIReadinessCheck.jsx  # Main assessment form
-│   │   ├── Dashboard.jsx         # Assessment list & management
-│   │   └── Login.jsx             # Authentication UI
+│   │   ├── AIReadinessCheck.jsx    # Main assessment form
+│   │   ├── Dashboard.jsx           # Assessment list & management
+│   │   ├── Analytics.jsx           # Analytics dashboard
+│   │   ├── SectionAIPanel.jsx      # AI chat assistant (Assessment)
+│   │   ├── AnalyticsAIPanel.jsx    # AI chat assistant (Analytics)
+│   │   ├── SectionRecommendations.jsx # AI recommendations panel
+│   │   ├── Recommendations.jsx     # Full recommendations view
+│   │   └── Login.jsx               # Authentication UI
 │   ├── contexts/
-│   │   └── AuthContext.jsx       # Authentication state
+│   │   └── AuthContext.jsx         # Authentication state
 │   ├── lib/
-│   │   └── supabase.js           # Supabase client
-│   ├── App.jsx                   # Main app with routing
-│   └── main.jsx                  # Entry point
+│   │   ├── supabase.js             # Supabase client
+│   │   ├── aiService.js            # AI API integration
+│   │   ├── recommendationService.js # Recommendation generation
+│   │   ├── scoring.js              # AI Readiness scoring
+│   │   ├── pdfExport.js            # PDF/Word export
+│   │   └── constants.js            # Industries & sections
+│   ├── App.jsx                     # Main app with routing
+│   └── main.jsx                    # Entry point
 ├── supabase/
-│   └── schema.sql                # Database schema
-├── .env.example                  # Environment template
+│   └── schema.sql                  # Database schema
+├── .env.example                    # Environment template
 └── package.json
 ```
 
@@ -73,6 +110,22 @@ ai-readiness-check/
 | `assessments` | Assessment instances (customer, industry, status) |
 | `section_assignments` | Who is assigned to which section |
 | `answers` | Individual question responses |
+
+## 🤖 AI Integration
+
+### Silava AI Assistant
+The AI assistant uses the adesso-ai-hub API with the `gpt-oss-120b-sovereign` model:
+- **Assessment Page**: Context-aware help for each section
+- **Analytics Page**: Query customer data and get insights
+- **Multi-chat**: Create multiple conversations with auto-generated titles
+- **RAG**: Retrieval-Augmented Generation with Supabase data
+
+### AI Recommendations
+Real-time recommendations generated based on:
+- Current section answers
+- Industry context
+- SAP best practices
+- AI readiness benchmarks
 
 ## 🔐 Authentication
 
@@ -86,7 +139,7 @@ The app supports:
 1. **Create Assessment** - Start a new assessment for a customer
 2. **Assign Sections** - Delegate sections to team members
 3. **Track Progress** - See who completed what
-4. **Real-time Updates** - Changes sync across users (coming soon)
+4. **Real-time Updates** - Changes sync across users
 
 ## 🏭 Supported Industries
 
@@ -110,6 +163,21 @@ The app supports:
 - 💼 Professional Services
 - 🧪 Chemical / Process Industries
 
+## 📄 Export Options
+
+Export assessments in multiple formats:
+- **Word (.doc)** - Editable document
+- **PDF** - Print-ready format
+- **Languages**: German 🇩🇪 or English 🇬🇧
+
+## 🛠️ Tech Stack
+
+- **Frontend**: React 18, Vite
+- **Styling**: Inline styles with Outfit font
+- **Database**: Supabase (PostgreSQL)
+- **AI**: adesso-ai-hub API (gpt-oss-120b-sovereign)
+- **Deployment**: GitHub Pages
+- **Export**: html2canvas, jsPDF
 
 ## 🤝 Contributing
 
@@ -117,6 +185,10 @@ The app supports:
 2. Make your changes
 3. Test locally
 4. Submit a pull request
+
+## 📝 License
+
+MIT License - See LICENSE file for details
 
 ---
 
