@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "homepage": "https://jwanOo.github.io/ai-readiness-check",
+  "homepage": "https://jwanOo.github.io/readiness",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
