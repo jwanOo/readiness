@@ -176,31 +176,42 @@ export default function SectionAIPanel({
     }
   }, [chatSessions, userId, assessmentId]);
 
-  // Update current session messages when chatMessages change
-  useEffect(() => {
-    if (activeSessionId && chatMessages.length > 0) {
-      setChatSessions(prev => prev.map(session => 
-        session.id === activeSessionId 
-          ? { 
-              ...session, 
-              messages: chatMessages, 
-              updatedAt: new Date().toISOString(),
-              title: session.title || generateSessionTitle(chatMessages),
-            }
-          : session
-      ));
-    }
-  }, [chatMessages, activeSessionId]);
-
-  // Generate a title from the first user message
+  // Generate a title from the first user message (summary of first prompt)
   const generateSessionTitle = (messages) => {
     const firstUserMsg = messages.find(m => m.role === 'user');
     if (firstUserMsg) {
-      const title = firstUserMsg.content.slice(0, 40);
+      // Take first 50 characters as summary of the first prompt
+      const title = firstUserMsg.content.slice(0, 50);
       return title.length < firstUserMsg.content.length ? title + '...' : title;
     }
     return language === 'de' ? 'Neuer Chat' : 'New Chat';
   };
+
+  // Check if title is still the default placeholder
+  const isDefaultTitle = (title) => {
+    return !title || title === 'Neuer Chat' || title === 'New Chat';
+  };
+
+  // Update current session messages when chatMessages change
+  useEffect(() => {
+    if (activeSessionId && chatMessages.length > 0) {
+      setChatSessions(prev => prev.map(session => {
+        if (session.id !== activeSessionId) return session;
+        
+        // Generate title from first user message if title is still default
+        const newTitle = isDefaultTitle(session.title) 
+          ? generateSessionTitle(chatMessages) 
+          : session.title;
+        
+        return { 
+          ...session, 
+          messages: chatMessages, 
+          updatedAt: new Date().toISOString(),
+          title: newTitle,
+        };
+      }));
+    }
+  }, [chatMessages, activeSessionId]);
 
   // Create a new chat session
   const createNewSession = (isInitial = false) => {
