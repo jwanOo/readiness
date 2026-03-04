@@ -2,7 +2,7 @@
 
 A comprehensive SAP AI Readiness assessment tool featuring AI-powered recommendations, intelligent chat assistants, and collaborative assessment capabilities.
 
-🌐 **Live Demo:** [https://jwanoo.github.io/readiness/](https://jwanoo.github.io/readiness/)
+🌐 **Live Demo:** [https://jwanoo.github.io/ai-readiness-check/](https://jwanoo.github.io/ai-readiness-check/)
 
 ## ✨ Key Features
 
@@ -39,8 +39,8 @@ A comprehensive SAP AI Readiness assessment tool featuring AI-powered recommenda
 
 ### 1. Clone and Install
 ```bash
-git clone https://github.com/jwanOo/readiness.git
-cd readiness
+git clone https://github.com/jwanOo/ai-readiness-check.git
+cd ai-readiness-check
 npm install
 ```
 
@@ -74,7 +74,7 @@ Open [http://localhost:5173](http://localhost:5173)
 ## 📁 Project Structure
 
 ```
-readiness/
+ai-readiness-check/
 ├── src/
 │   ├── components/
 │   │   ├── AIReadinessCheck.jsx    # Main assessment form
