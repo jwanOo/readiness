@@ -1,8 +1,11 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { useLanguage } from '../i18n';
+import { LanguageSwitcherCompact } from '../i18n/LanguageSwitcher';
 import MultiSelectDropdown from './MultiSelectDropdown';
 import { generatePDF } from '../lib/pdfExport';
+import { generatePowerPoint } from '../lib/pptxExport';
 import Recommendations from './Recommendations';
 import SectionAIPanel from './SectionAIPanel';
 import SectionRecommendations from './SectionRecommendations';
@@ -12,7 +15,75 @@ import SectionRecommendations from './SectionRecommendations';
    Source: adesso.de/branchen + adesso.ch/branchen
    ═══════════════════════════════════════════════════════════════ */
 
-const INDUSTRIES = {
+// Industry metadata (non-translatable parts)
+const INDUSTRY_META = {
+  insurance: { icon: "🛡️", color: "#1A5276", gradient: "linear-gradient(135deg, #1A5276 0%, #154360 100%)", country: "DE + CH", priority: "core" },
+  banking: { icon: "🏦", color: "#2C3E50", gradient: "linear-gradient(135deg, #2C3E50 0%, #1A252F 100%)", country: "DE + CH", priority: "core" },
+  healthcare: { icon: "🏥", color: "#1ABC9C", gradient: "linear-gradient(135deg, #1ABC9C 0%, #16A085 100%)", country: "DE + CH", priority: "core" },
+  automotive: { icon: "🚗", color: "#E74C3C", gradient: "linear-gradient(135deg, #E74C3C 0%, #C0392B 100%)", country: "DE + CH", priority: "core" },
+  manufacturing: { icon: "⚙️", color: "#E67E22", gradient: "linear-gradient(135deg, #E67E22 0%, #D35400 100%)", country: "DE + CH", priority: "core" },
+  retail: { icon: "🛒", color: "#27AE60", gradient: "linear-gradient(135deg, #27AE60 0%, #1E8449 100%)", country: "DE + CH", priority: "core" },
+  energy: { icon: "⚡", color: "#F39C12", gradient: "linear-gradient(135deg, #F39C12 0%, #E67E22 100%)", country: "DE + CH", priority: "core" },
+  publicSector: { icon: "🏛️", color: "#2980B9", gradient: "linear-gradient(135deg, #2980B9 0%, #1F6DA0 100%)", country: "DE + CH", priority: "core" },
+  lifeSciences: { icon: "💊", color: "#8E44AD", gradient: "linear-gradient(135deg, #8E44AD 0%, #6C3483 100%)", country: "DE + CH", priority: "core" },
+  lottery: { icon: "🎰", color: "#D4AC0D", gradient: "linear-gradient(135deg, #D4AC0D 0%, #B7950B 100%)", country: "DE", priority: "important" },
+  transport: { icon: "🚆", color: "#3498DB", gradient: "linear-gradient(135deg, #3498DB 0%, #2471A3 100%)", country: "DE + CH", priority: "important" },
+  media: { icon: "🎬", color: "#9B59B6", gradient: "linear-gradient(135deg, #9B59B6 0%, #7D3C98 100%)", country: "DE + CH", priority: "important" },
+  defense: { icon: "🎖️", color: "#566573", gradient: "linear-gradient(135deg, #566573 0%, #2C3E50 100%)", country: "DE", priority: "important" },
+  foodBeverage: { icon: "🍽️", color: "#E74C3C", gradient: "linear-gradient(135deg, #D35400 0%, #E74C3C 100%)", country: "DE", priority: "niche" },
+  construction: { icon: "🏗️", color: "#DC7633", gradient: "linear-gradient(135deg, #DC7633 0%, #BA4A00 100%)", country: "DE", priority: "niche" },
+  tradeFairsSports: { icon: "🏟️", color: "#16A085", gradient: "linear-gradient(135deg, #16A085 0%, #1ABC9C 100%)", country: "DE + CH", priority: "niche" },
+  telecom: { icon: "📡", color: "#2980B9", gradient: "linear-gradient(135deg, #2980B9 0%, #3498DB 100%)", country: "CH", priority: "niche" },
+  professionalServices: { icon: "💼", color: "#7D3C98", gradient: "linear-gradient(135deg, #7D3C98 0%, #6C3483 100%)", country: "DE + CH", priority: "important" },
+  chemical: { icon: "🧪", color: "#117A65", gradient: "linear-gradient(135deg, #117A65 0%, #0E6655 100%)", country: "DE + CH", priority: "important" },
+};
+
+// Helper function to build industries from translations
+function buildIndustries(translatedIndustries) {
+  if (!translatedIndustries) return {};
+  
+  const result = {};
+  Object.keys(INDUSTRY_META).forEach(key => {
+    const meta = INDUSTRY_META[key];
+    const trans = translatedIndustries[key];
+    if (trans) {
+      result[key] = {
+        ...meta,
+        label: trans.label,
+        desc: trans.desc,
+        specificQuestions: trans.sections?.map(s => ({
+          section: s.title,
+          questions: s.questions,
+        })) || [],
+      };
+    }
+  });
+  return result;
+}
+
+// Helper function to build core sections from translations
+function buildCoreSections(translatedSections) {
+  if (!translatedSections) return [];
+  
+  const sectionOrder = ['general', 'landscape', 'licensing', 'btp', 'cloud', 'aiSap', 'aiNonSap', 'data', 'security', 'org', 'useCases'];
+  
+  return sectionOrder.map(id => {
+    const trans = translatedSections[id];
+    if (!trans) return null;
+    return {
+      id,
+      title: trans.title,
+      questions: trans.questions.map(q => ({
+        q: q.q,
+        hint: q.hint || '',
+        type: id === 'general' ? 'text' : undefined,
+      })),
+    };
+  }).filter(Boolean);
+}
+
+// Fallback German industries (used when translations not loaded)
+const INDUSTRIES_DE = {
   /* ── CORE adesso industries ────────────────────────────── */
   insurance: {
     label: "Versicherungen / Rückversicherungen",
@@ -488,7 +559,7 @@ const INDUSTRIES = {
   },
 };
 
-const CORE_SECTIONS = [
+const CORE_SECTIONS_DE = [
   {
     id: "general",
     title: "📋 Allgemeine Informationen",
@@ -923,7 +994,7 @@ export default function AIReadinessCheck({
   const [showRecommendations, setShowRecommendations] = useState(false);
   const [exportDone, setExportDone] = useState(false);
   const [showIndQ, setShowIndQ] = useState(true);
-  const [enabledCore, setEnabledCore] = useState(CORE_SECTIONS.reduce((a,s)=>({...a,[s.id]:true}),{}));
+  const [enabledCore, setEnabledCore] = useState(CORE_SECTIONS_DE.reduce((a,s)=>({...a,[s.id]:true}),{}));
   const [countryFilter, setCountryFilter] = useState("all"); // all, DE, CH
   const [priorityFilter, setPriorityFilter] = useState("all"); // all, core, important, niche
   const [saving, setSaving] = useState(false);
@@ -940,21 +1011,25 @@ export default function AIReadinessCheck({
   const realtimeChannelRef = useRef(null);
   const presenceChannelRef = useRef(null);
   
-  // Language preference for AI recommendations
-  const [language, setLanguage] = useState(() => {
-    // Try to get from localStorage, default to 'de'
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('ai_readiness_language') || 'de';
-    }
-    return 'de';
-  });
+  // Use i18n context for language
+  const { language, setLanguage, t, tSection } = useLanguage();
   
-  // Save language preference
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('ai_readiness_language', language);
+  // Get translated industries and sections based on current language
+  const INDUSTRIES = React.useMemo(() => {
+    const translatedIndustries = tSection('industries');
+    if (translatedIndustries && Object.keys(translatedIndustries).length > 0) {
+      return buildIndustries(translatedIndustries);
     }
-  }, [language]);
+    return INDUSTRIES_DE; // Fallback to German
+  }, [language, tSection]);
+  
+  const CORE_SECTIONS = React.useMemo(() => {
+    const translatedSections = tSection('sections');
+    if (translatedSections && Object.keys(translatedSections).length > 0) {
+      return buildCoreSections(translatedSections);
+    }
+    return CORE_SECTIONS_DE; // Fallback to German
+  }, [language, tSection]);
 
   // Load existing answers when assessment is provided
   useEffect(() => {
@@ -1260,13 +1335,22 @@ export default function AIReadinessCheck({
       <div style={{minHeight:"100vh",background:"#F7F9FC",position:"relative"}}>
         <AnimBG/><style>{gStyle}</style>
         <div style={{position:"relative",zIndex:1,maxWidth:"1060px",margin:"0 auto",padding:"40px 24px"}}>
+          {/* Language Switcher - Top Right */}
+          <div style={{position:"absolute",top:20,right:24,zIndex:10}}>
+            <LanguageSwitcherCompact />
+          </div>
+          
           <div style={{textAlign:"center",marginBottom:"36px",animation:"fadeUp .6s ease-out"}}>
             <div style={{display:"inline-flex",alignItems:"center",gap:10,background:"linear-gradient(135deg,#1B3A5C,#2E86C1)",padding:"8px 22px",borderRadius:40,marginBottom:20}}>
               <span style={{color:"#fff",fontWeight:700,fontSize:13,letterSpacing:2,textTransform:"uppercase"}}>AI Readiness Check</span>
             </div>
-            <h1 style={{fontSize:"clamp(26px,3.5vw,38px)",fontWeight:800,color:"#1B3A5C",lineHeight:1.2,marginBottom:12}}>Branchenspezifischer AI Readiness Check</h1>
+            <h1 style={{fontSize:"clamp(26px,3.5vw,38px)",fontWeight:800,color:"#1B3A5C",lineHeight:1.2,marginBottom:12}}>
+              {language === 'en' ? 'Industry-Specific AI Readiness Check' : 'Branchenspezifischer AI Readiness Check'}
+            </h1>
             <p style={{fontSize:15,color:"#5D6D7E",maxWidth:620,margin:"0 auto",lineHeight:1.6}}>
-              Wählen Sie die Branche Ihres Kunden — basierend auf dem vollständigen adesso-Branchenportfolio für Deutschland und die Schweiz.
+              {language === 'en' 
+                ? "Select your customer's industry — based on the complete adesso industry portfolio for Germany and Switzerland."
+                : 'Wählen Sie die Branche Ihres Kunden — basierend auf dem vollständigen adesso-Branchenportfolio für Deutschland und die Schweiz.'}
             </p>
           </div>
 
@@ -1441,7 +1525,10 @@ export default function AIReadinessCheck({
             <div style={{background:"#E8EDF2",borderRadius:5,height:7,marginBottom:5,overflow:"hidden"}}>
               <div style={{background:"linear-gradient(90deg,#2E86C1,#27AE60)",height:"100%",borderRadius:5,width:`${progress}%`,transition:"width .5s ease"}}/>
             </div>
-            <div style={{fontSize:11,color:"#7F8C8D"}}>{answeredQ}/{totalQ} beantwortet</div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+              <div style={{fontSize:11,color:"#7F8C8D"}}>{answeredQ}/{totalQ} {language === 'de' ? 'beantwortet' : 'answered'}</div>
+              <LanguageSwitcherCompact />
+            </div>
             
             {/* Save Status Indicator */}
             {assessment?.id && (
@@ -1581,9 +1668,9 @@ export default function AIReadinessCheck({
                 <div style={{display:"inline-block",background:"linear-gradient(135deg,#8E44AD15,#9B59B615)",border:"1.5px solid #8E44AD40",borderRadius:7,padding:"3px 10px",fontSize:10,fontWeight:700,color:"#8E44AD",textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>
                   KI-generiert
                 </div>
-                <h2 style={{fontSize:20,fontWeight:800,color:"#1B3A5C"}}>🤖 AI Empfehlungen</h2>
+                <h2 style={{fontSize:20,fontWeight:800,color:"#1B3A5C"}}>🤖 {language === 'en' ? 'AI Recommendations' : 'AI Empfehlungen'}</h2>
                 <p style={{fontSize:12,color:"#95A5A6",marginTop:3}}>
-                  Personalisierte Handlungsempfehlungen basierend auf Ihren Assessment-Antworten
+                  {language === 'en' ? 'Personalized recommendations based on your assessment answers' : 'Personalisierte Handlungsempfehlungen basierend auf Ihren Assessment-Antworten'}
                 </p>
               </div>
               
@@ -1777,6 +1864,17 @@ export default function AIReadinessCheck({
                   }}
                     style={{background:"linear-gradient(135deg,#C0392B,#E74C3C)",color:"#fff",border:"none",borderRadius:10,padding:"12px 28px",fontSize:13,fontWeight:700,display:"flex",alignItems:"center",gap:8,boxShadow:"0 4px 14px rgba(231,76,60,0.2)"}}>
                     <span style={{fontSize:18}}>📄</span> {language === 'de' ? 'PDF exportieren' : 'Export PDF'}
+                  </button>
+                  <button className="btn" onClick={async () => {
+                    try {
+                      await generatePowerPoint(assessment || { customer_name: answers['general_0'] || 'Customer', industry: selectedIndustry }, answers, language);
+                    } catch (error) {
+                      console.error('PowerPoint generation error:', error);
+                      alert(language === 'de' ? 'Fehler beim Erstellen der PowerPoint-Präsentation' : 'Error creating PowerPoint presentation');
+                    }
+                  }}
+                    style={{background:"linear-gradient(135deg,#E67E22,#F39C12)",color:"#fff",border:"none",borderRadius:10,padding:"12px 28px",fontSize:13,fontWeight:700,display:"flex",alignItems:"center",gap:8,boxShadow:"0 4px 14px rgba(230,126,34,0.2)"}}>
+                    <span style={{fontSize:18}}>📊</span> {language === 'de' ? 'PowerPoint exportieren' : 'Export PowerPoint'}
                   </button>
                 </div>
                 <p style={{fontSize:11,color:"#95A5A6",marginBottom:16}}>

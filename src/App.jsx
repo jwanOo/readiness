@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, useNavigate, useLocation, useParams } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { LanguageProvider } from './i18n';
 import { supabase } from './lib/supabase';
 import Login from './components/Login';
 import Dashboard from './components/Dashboard';
@@ -391,13 +392,15 @@ function AppContent() {
   );
 }
 
-// Root App with Auth Provider and Router
+// Root App with Auth Provider, Language Provider, and Router
 export default function App() {
   return (
     <BrowserRouter basename="/ai-readiness-check/">
-      <AuthProvider>
-        <AppContent />
-      </AuthProvider>
+      <LanguageProvider>
+        <AuthProvider>
+          <AppContent />
+        </AuthProvider>
+      </LanguageProvider>
     </BrowserRouter>
   );
 }

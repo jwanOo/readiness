@@ -4,9 +4,12 @@ import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { INDUSTRIES, STATUS_CONFIG, getIndustryInfo } from '../lib/constants';
 import { generatePDF } from '../lib/pdfExport';
+import { useLanguage } from '../i18n';
+import { LanguageSwitcherCompact } from '../i18n/LanguageSwitcher';
 
 export default function Dashboard({ onSelectAssessment, onCreateNew, onShowAnalytics }) {
   const { user, profile, signOut } = useAuth();
+  const { language, t } = useLanguage();
   const [assessments, setAssessments] = useState([]);
   const [myAssignments, setMyAssignments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -14,6 +17,118 @@ export default function Dashboard({ onSelectAssessment, onCreateNew, onShowAnaly
   const [newAssessment, setNewAssessment] = useState({ customerName: '', industry: '' });
   const [creating, setCreating] = useState(false);
   const [activeTab, setActiveTab] = useState('my'); // 'my', 'assigned', 'all'
+  
+  // Dashboard translations
+  const dashboardText = {
+    de: {
+      myAssessments: 'Meine Assessments',
+      assignedSections: 'Zugewiesene Abschnitte',
+      completed: 'Abgeschlossen',
+      analytics: 'Analytics',
+      compareCustomers: 'Alle Kunden vergleichen',
+      assigned: 'Mir zugewiesen',
+      all: 'Alle',
+      select: 'Auswählen',
+      endSelection: 'Auswahl beenden',
+      newAssessment: 'Neues Assessment',
+      selected: 'ausgewählt',
+      selectAll: 'Alle auswählen',
+      deselectAll: 'Auswahl aufheben',
+      delete: 'Löschen',
+      loading: 'Lade Assessments...',
+      noAssessments: 'Keine Assessments gefunden',
+      createNew: 'Erstellen Sie ein neues Assessment, um zu beginnen.',
+      createAssessment: 'Neues Assessment erstellen',
+      createInfo: 'Geben Sie die Kundeninformationen ein, um ein neues AI Readiness Assessment zu starten.',
+      customerName: 'Kundenname',
+      customerPlaceholder: 'z.B. Allianz Deutschland AG',
+      industry: 'Branche',
+      selectIndustry: 'Branche auswählen...',
+      cancel: 'Abbrechen',
+      create: 'Assessment erstellen',
+      creating: 'Erstelle...',
+      deleteConfirm: 'Assessment(s) löschen?',
+      deleteWarning: 'Diese Aktion kann nicht rückgängig gemacht werden. Alle zugehörigen Antworten und Zuweisungen werden ebenfalls gelöscht.',
+      deleting: 'Lösche...',
+      welcome: 'Willkommen',
+      manageAssessments: 'Verwalten Sie Ihre AI Readiness Assessments und arbeiten Sie mit Ihrem Team zusammen.',
+      signOut: 'Abmelden',
+      consultant: 'Berater',
+      administrator: 'Administrator',
+      draft: 'Entwurf',
+      inProgress: 'In Bearbeitung',
+      allStatus: 'Alle Status',
+      allIndustries: 'Alle Branchen',
+      newestFirst: 'Neueste zuerst',
+      oldestFirst: 'Älteste zuerst',
+      nameAZ: 'Name A-Z',
+      nameZA: 'Name Z-A',
+      industryAZ: 'Branche A-Z',
+      clearFilters: 'Filter zurücksetzen',
+      searchPlaceholder: 'Suchen nach Kunde oder Branche...',
+      clickCheckboxes: 'Klicken Sie auf die Checkboxen, um Assessments auszuwählen',
+      assignedSection: 'Zugewiesener Abschnitt',
+      updated: 'Aktualisiert',
+      created: 'Erstellt',
+      by: 'von',
+      createdBy: 'Erstellt von',
+    },
+    en: {
+      myAssessments: 'My Assessments',
+      assignedSections: 'Assigned Sections',
+      completed: 'Completed',
+      analytics: 'Analytics',
+      compareCustomers: 'Compare all customers',
+      assigned: 'Assigned to me',
+      all: 'All',
+      select: 'Select',
+      endSelection: 'End selection',
+      newAssessment: 'New Assessment',
+      selected: 'selected',
+      selectAll: 'Select all',
+      deselectAll: 'Deselect all',
+      delete: 'Delete',
+      loading: 'Loading assessments...',
+      noAssessments: 'No assessments found',
+      createNew: 'Create a new assessment to get started.',
+      createAssessment: 'Create new assessment',
+      createInfo: 'Enter customer information to start a new AI Readiness Assessment.',
+      customerName: 'Customer name',
+      customerPlaceholder: 'e.g. Allianz Deutschland AG',
+      industry: 'Industry',
+      selectIndustry: 'Select industry...',
+      cancel: 'Cancel',
+      create: 'Create assessment',
+      creating: 'Creating...',
+      deleteConfirm: 'Delete assessment(s)?',
+      deleteWarning: 'This action cannot be undone. All related answers and assignments will also be deleted.',
+      deleting: 'Deleting...',
+      welcome: 'Welcome',
+      manageAssessments: 'Manage your AI Readiness Assessments and collaborate with your team.',
+      signOut: 'Sign out',
+      consultant: 'Consultant',
+      administrator: 'Administrator',
+      draft: 'Draft',
+      inProgress: 'In Progress',
+      allStatus: 'All Status',
+      allIndustries: 'All Industries',
+      newestFirst: 'Newest first',
+      oldestFirst: 'Oldest first',
+      nameAZ: 'Name A-Z',
+      nameZA: 'Name Z-A',
+      industryAZ: 'Industry A-Z',
+      clearFilters: 'Clear filters',
+      searchPlaceholder: 'Search by customer or industry...',
+      clickCheckboxes: 'Click checkboxes to select assessments',
+      assignedSection: 'Assigned Section',
+      updated: 'Updated',
+      created: 'Created',
+      by: 'by',
+      createdBy: 'Created by',
+    }
+  };
+  
+  const txt = dashboardText[language] || dashboardText.de;
   
   // Selection state for bulk operations
   const [selectedIds, setSelectedIds] = useState([]);
@@ -561,6 +676,9 @@ ${answers.length > 0 ? answers.map(a => `
         </div>
         
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          {/* Language Switcher */}
+          <LanguageSwitcherCompact />
+          
           <div style={{ textAlign: 'right' }}>
             <div style={{ fontSize: 14, fontWeight: 600, color: '#1B3A5C' }}>
               {(() => {
@@ -588,7 +706,7 @@ ${answers.length > 0 ? answers.map(a => `
             className="dashboard-btn dashboard-btn-secondary"
             onClick={signOut}
           >
-            Abmelden
+            {txt.signOut}
           </button>
         </div>
       </div>
@@ -598,7 +716,7 @@ ${answers.length > 0 ? answers.map(a => `
         {/* Welcome Section */}
         <div style={{ marginBottom: 32 }}>
           <h1 style={{ fontSize: 28, fontWeight: 800, color: '#1B3A5C', marginBottom: 8 }}>
-            Willkommen, {(() => {
+            {txt.welcome}, {(() => {
               // Try to get first name from full_name (only if it's not an email)
               if (profile?.full_name && !profile.full_name.includes('@')) {
                 return profile.full_name.split(' ')[0];
@@ -610,11 +728,11 @@ ${answers.length > 0 ? answers.map(a => `
                 // Capitalize first letter
                 return firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();
               }
-              return 'Berater';
+              return txt.consultant;
             })()}! 👋
           </h1>
           <p style={{ fontSize: 15, color: '#5D6D7E' }}>
-            Verwalten Sie Ihre AI Readiness Assessments und arbeiten Sie mit Ihrem Team zusammen.
+            {txt.manageAssessments}
           </p>
         </div>
 
@@ -622,17 +740,17 @@ ${answers.length > 0 ? answers.map(a => `
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16, marginBottom: 32 }}>
           <div style={{ background: '#fff', borderRadius: 12, padding: 20, border: '1px solid #E8EDF2' }}>
             <div style={{ fontSize: 32, fontWeight: 800, color: '#1B3A5C' }}>{myAssessmentsFiltered.length}</div>
-            <div style={{ fontSize: 13, color: '#7F8C8D' }}>Meine Assessments</div>
+            <div style={{ fontSize: 13, color: '#7F8C8D' }}>{txt.myAssessments}</div>
           </div>
           <div style={{ background: '#fff', borderRadius: 12, padding: 20, border: '1px solid #E8EDF2' }}>
             <div style={{ fontSize: 32, fontWeight: 800, color: '#2E86C1' }}>{myAssignments.length}</div>
-            <div style={{ fontSize: 13, color: '#7F8C8D' }}>Zugewiesene Abschnitte</div>
+            <div style={{ fontSize: 13, color: '#7F8C8D' }}>{txt.assignedSections}</div>
           </div>
           <div style={{ background: '#fff', borderRadius: 12, padding: 20, border: '1px solid #E8EDF2' }}>
             <div style={{ fontSize: 32, fontWeight: 800, color: '#27AE60' }}>
               {assessments.filter(a => a.status === 'completed').length}
             </div>
-            <div style={{ fontSize: 13, color: '#7F8C8D' }}>Abgeschlossen</div>
+            <div style={{ fontSize: 13, color: '#7F8C8D' }}>{txt.completed}</div>
           </div>
           {/* Analytics Button */}
           <Link 
@@ -652,8 +770,8 @@ ${answers.length > 0 ? answers.map(a => `
             onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}
           >
             <div style={{ fontSize: 28, marginBottom: 4 }}>📊</div>
-            <div style={{ fontSize: 14, fontWeight: 700, color: '#fff' }}>Analytics</div>
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.8)' }}>Alle Kunden vergleichen</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#fff' }}>{txt.analytics}</div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.8)' }}>{txt.compareCustomers}</div>
           </Link>
         </div>
 
@@ -664,19 +782,19 @@ ${answers.length > 0 ? answers.map(a => `
               className={`dashboard-tab ${activeTab === 'my' ? 'dashboard-tab-active' : 'dashboard-tab-inactive'}`}
               onClick={() => setActiveTab('my')}
             >
-              Meine Assessments ({myAssessmentsFiltered.length})
+              {txt.myAssessments} ({myAssessmentsFiltered.length})
             </button>
             <button 
               className={`dashboard-tab ${activeTab === 'assigned' ? 'dashboard-tab-active' : 'dashboard-tab-inactive'}`}
               onClick={() => setActiveTab('assigned')}
             >
-              Mir zugewiesen ({myAssignments.length})
+              {txt.assigned} ({myAssignments.length})
             </button>
             <button 
               className={`dashboard-tab ${activeTab === 'all' ? 'dashboard-tab-active' : 'dashboard-tab-inactive'}`}
               onClick={() => setActiveTab('all')}
             >
-              Alle ({assessments.length})
+              {txt.all} ({assessments.length})
             </button>
           </div>
           
@@ -694,14 +812,14 @@ ${answers.length > 0 ? answers.map(a => `
                   color: selectionMode ? '#B7950B' : '#5D6D7E'
                 }}
               >
-                {selectionMode ? '✕ Auswahl beenden' : '☑️ Auswählen'}
+                {selectionMode ? `✕ ${txt.endSelection}` : `☑️ ${txt.select}`}
               </button>
             )}
             <button 
               className="dashboard-btn dashboard-btn-primary"
               onClick={() => setShowCreateModal(true)}
             >
-              + Neues Assessment
+              + {txt.newAssessment}
             </button>
           </div>
         </div>

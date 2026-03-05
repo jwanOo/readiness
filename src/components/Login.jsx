@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
+import { useLanguage } from '../i18n';
+import { LanguageSwitcherCompact } from '../i18n/LanguageSwitcher';
 
 export default function Login() {
   const { signIn, signUp, signInWithMagicLink, error: authError, connectionStatus, retryConnection } = useAuth();
@@ -180,11 +182,97 @@ export default function Login() {
   };
 
   const passwordStrength = getPasswordStrength(password);
+  
+  // Use i18n
+  const { language, t } = useLanguage();
+  
+  // Translations for login page
+  const loginText = {
+    de: {
+      welcomeBack: 'Willkommen zurück',
+      createAccount: 'Konto erstellen',
+      setPassword: 'Passwort festlegen',
+      magicLink: 'Magic Link Login',
+      loginSubtitle: 'Melden Sie sich an, um fortzufahren',
+      registerSubtitle: 'Erstellen Sie ein neues Konto',
+      setPasswordSubtitle: 'Legen Sie Ihr Passwort fest, um Ihr Konto zu aktivieren',
+      magicLinkSubtitle: 'Erhalten Sie einen Login-Link per E-Mail',
+      connecting: 'Verbinde mit Server...',
+      connectionError: 'Verbindungsproblem',
+      retry: 'Erneut versuchen',
+      invitationInfo: 'Sie wurden eingeladen! Bitte legen Sie ein Passwort fest, um Ihr Konto zu aktivieren.',
+      login: 'Anmelden',
+      register: 'Registrieren',
+      fullName: 'Vollständiger Name',
+      email: 'E-Mail-Adresse',
+      password: 'Passwort',
+      newPassword: 'Neues Passwort',
+      confirmPassword: 'Passwort bestätigen',
+      pleaseWait: 'Bitte warten...',
+      sendMagicLink: 'Magic Link senden',
+      or: 'oder',
+      loginWithoutPassword: 'Login ohne Passwort (Magic Link)',
+      backToLogin: 'Zurück zur Anmeldung',
+      poweredBy: 'Powered by',
+      tooShort: 'Zu kurz',
+      weak: 'Schwach',
+      medium: 'Mittel',
+      strong: 'Stark',
+      passwordsNoMatch: 'Die Passwörter stimmen nicht überein',
+      passwordTooShort: 'Das Passwort muss mindestens 6 Zeichen lang sein',
+      registrationSuccess: 'Registrierung erfolgreich! Bitte bestätigen Sie Ihre E-Mail.',
+      magicLinkSent: 'Magic Link wurde gesendet! Bitte prüfen Sie Ihre E-Mail.',
+      passwordSetSuccess: 'Passwort erfolgreich gesetzt! Sie werden angemeldet...',
+    },
+    en: {
+      welcomeBack: 'Welcome back',
+      createAccount: 'Create account',
+      setPassword: 'Set password',
+      magicLink: 'Magic Link Login',
+      loginSubtitle: 'Sign in to continue',
+      registerSubtitle: 'Create a new account',
+      setPasswordSubtitle: 'Set your password to activate your account',
+      magicLinkSubtitle: 'Receive a login link via email',
+      connecting: 'Connecting to server...',
+      connectionError: 'Connection problem',
+      retry: 'Retry',
+      invitationInfo: 'You have been invited! Please set a password to activate your account.',
+      login: 'Sign in',
+      register: 'Register',
+      fullName: 'Full name',
+      email: 'Email address',
+      password: 'Password',
+      newPassword: 'New password',
+      confirmPassword: 'Confirm password',
+      pleaseWait: 'Please wait...',
+      sendMagicLink: 'Send Magic Link',
+      or: 'or',
+      loginWithoutPassword: 'Login without password (Magic Link)',
+      backToLogin: 'Back to login',
+      poweredBy: 'Powered by',
+      tooShort: 'Too short',
+      weak: 'Weak',
+      medium: 'Medium',
+      strong: 'Strong',
+      passwordsNoMatch: 'Passwords do not match',
+      passwordTooShort: 'Password must be at least 6 characters',
+      registrationSuccess: 'Registration successful! Please confirm your email.',
+      magicLinkSent: 'Magic Link sent! Please check your email.',
+      passwordSetSuccess: 'Password set successfully! You are being logged in...',
+    }
+  };
+  
+  const txt = loginText[language] || loginText.de;
 
   return (
     <div className="login-container">
       <style>{styles}</style>
-      <div className="login-card">
+      <div className="login-card" style={{ position: 'relative' }}>
+        {/* Language Switcher - Top Right */}
+        <div style={{ position: 'absolute', top: 16, right: 16 }}>
+          <LanguageSwitcherCompact />
+        </div>
+        
         {/* Header */}
         <div style={{ textAlign: 'center', marginBottom: 32 }}>
           <div style={{ 
@@ -202,16 +290,16 @@ export default function Login() {
             </span>
           </div>
           <h1 style={{ fontSize: 24, fontWeight: 800, color: '#1B3A5C', marginBottom: 8 }}>
-            {mode === 'login' ? 'Willkommen zurück' : 
-             mode === 'register' ? 'Konto erstellen' : 
-             mode === 'setPassword' ? 'Passwort festlegen' :
-             'Magic Link Login'}
+            {mode === 'login' ? txt.welcomeBack : 
+             mode === 'register' ? txt.createAccount : 
+             mode === 'setPassword' ? txt.setPassword :
+             txt.magicLink}
           </h1>
           <p style={{ fontSize: 14, color: '#7F8C8D' }}>
-            {mode === 'login' ? 'Melden Sie sich an, um fortzufahren' : 
-             mode === 'register' ? 'Erstellen Sie ein neues Konto' : 
-             mode === 'setPassword' ? 'Legen Sie Ihr Passwort fest, um Ihr Konto zu aktivieren' :
-             'Erhalten Sie einen Login-Link per E-Mail'}
+            {mode === 'login' ? txt.loginSubtitle : 
+             mode === 'register' ? txt.registerSubtitle : 
+             mode === 'setPassword' ? txt.setPasswordSubtitle :
+             txt.magicLinkSubtitle}
           </p>
         </div>
 
@@ -219,13 +307,13 @@ export default function Login() {
         {connectionStatus === 'connecting' && (
           <div className="connection-status connection-connecting">
             <span className="spinner" />
-            <span>Verbinde mit Server...</span>
+            <span>{txt.connecting}</span>
           </div>
         )}
         {connectionStatus === 'error' && (
           <div className="connection-status connection-error">
             <span>⚠️</span>
-            <span>Verbindungsproblem</span>
+            <span>{txt.connectionError}</span>
             <button 
               onClick={handleRetry}
               style={{ 
@@ -239,7 +327,7 @@ export default function Login() {
                 textDecoration: 'underline'
               }}
             >
-              Erneut versuchen
+              {txt.retry}
             </button>
           </div>
         )}
@@ -247,7 +335,7 @@ export default function Login() {
         {/* Invitation Info */}
         {isInvitation && mode === 'setPassword' && (
           <div className="login-info">
-            🎉 Sie wurden eingeladen! Bitte legen Sie ein Passwort fest, um Ihr Konto zu aktivieren.
+            🎉 {txt.invitationInfo}
           </div>
         )}
 
@@ -258,13 +346,13 @@ export default function Login() {
               className={`login-tab ${mode === 'login' ? 'login-tab-active' : 'login-tab-inactive'}`}
               onClick={() => { setMode('login'); setError(''); setMessage(''); }}
             >
-              Anmelden
+              {txt.login}
             </button>
             <button 
               className={`login-tab ${mode === 'register' ? 'login-tab-active' : 'login-tab-inactive'}`}
               onClick={() => { setMode('register'); setError(''); setMessage(''); }}
             >
-              Registrieren
+              {txt.register}
             </button>
           </div>
         )}
@@ -279,7 +367,7 @@ export default function Login() {
             <input
               type="text"
               className="login-input"
-              placeholder="Vollständiger Name"
+              placeholder={txt.fullName}
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
               required
@@ -290,7 +378,7 @@ export default function Login() {
             <input
               type="email"
               className="login-input"
-              placeholder="E-Mail-Adresse"
+              placeholder={txt.email}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
@@ -302,7 +390,7 @@ export default function Login() {
               <input
                 type="password"
                 className="login-input"
-                placeholder={mode === 'setPassword' ? 'Neues Passwort' : 'Passwort'}
+                placeholder={mode === 'setPassword' ? txt.newPassword : txt.password}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
@@ -338,7 +426,7 @@ export default function Login() {
             <input
               type="password"
               className="login-input"
-              placeholder="Passwort bestätigen"
+              placeholder={txt.confirmPassword}
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               required
@@ -357,13 +445,13 @@ export default function Login() {
             {loading ? (
               <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
                 <span className="spinner" style={{ borderColor: '#fff', borderTopColor: 'transparent' }} />
-                Bitte warten...
+                {txt.pleaseWait}
               </span>
             ) : 
-             mode === 'login' ? 'Anmelden' : 
-             mode === 'register' ? 'Registrieren' : 
-             mode === 'setPassword' ? 'Passwort festlegen' :
-             'Magic Link senden'}
+             mode === 'login' ? txt.login : 
+             mode === 'register' ? txt.register : 
+             mode === 'setPassword' ? txt.setPassword :
+             txt.sendMagicLink}
           </button>
         </form>
 
@@ -372,7 +460,7 @@ export default function Login() {
           <>
             <div className="login-divider">
               <div className="login-divider-line" />
-              <span className="login-divider-text">oder</span>
+              <span className="login-divider-text">{txt.or}</span>
               <div className="login-divider-line" />
             </div>
 
@@ -381,7 +469,7 @@ export default function Login() {
               className="login-btn login-btn-secondary"
               onClick={() => { setMode(mode === 'magic' ? 'login' : 'magic'); setError(''); setMessage(''); }}
             >
-              {mode === 'magic' ? '← Zurück zur Anmeldung' : '✉️ Login ohne Passwort (Magic Link)'}
+              {mode === 'magic' ? `← ${txt.backToLogin}` : `✉️ ${txt.loginWithoutPassword}`}
             </button>
           </>
         )}
@@ -393,7 +481,7 @@ export default function Login() {
             onClick={() => { setMode('login'); setError(''); setMessage(''); setIsInvitation(false); }}
             style={{ marginTop: 16 }}
           >
-            ← Zurück zur Anmeldung
+            ← {txt.backToLogin}
           </button>
         )}
 

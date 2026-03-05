@@ -122,7 +122,7 @@ export default function SectionRecommendations({
               color: '#8E44AD',
               margin: 0,
             }}>
-              AI Empfehlungen
+              {language === 'en' ? 'AI Recommendations' : 'AI Empfehlungen'}
             </h3>
             <p style={{ 
               fontSize: 11, 
