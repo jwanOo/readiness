@@ -42,26 +42,44 @@ export function recognizeIntent(message, language = 'de') {
   const lowerMsg = message.toLowerCase().trim();
   
   // ─── FILL FROM CUSTOMER ───
+  // More flexible patterns to catch various ways users might ask to fill
   const fillPatterns = {
     de: [
-      /(?:füll|ausfüll|übernehm|kopier|verwend).*(?:von|aus|basierend|daten).*(?:kunde|customer|assessment)/i,
-      /(?:daten|antworten).*(?:von|aus).*(?:kunde|customer)/i,
-      /(?:basierend auf|based on).*(?:kunde|customer)/i,
-      /(?:fill|ausfüllen).*(?:based|basierend)/i,
-      /(?:kunde|customer)\s+(\w+).*(?:übernehm|kopier|verwend)/i,
+      // "füll aus basierend auf Automotive"
+      /(?:füll|ausfüll|übernehm|kopier|verwend|lade|hol|nimm).*(?:basierend|von|aus|für|mit)/i,
+      // "basierend auf Kunde Automotive"
+      /basierend\s+auf/i,
+      // "Daten von Automotive übernehmen"
+      /(?:daten|antworten).*(?:von|aus|für)/i,
+      // "fill based on"
+      /fill.*(?:based|from|with)/i,
+      // "Kunde Automotive übernehmen"
+      /(?:kunde|customer)\s+\w+.*(?:übernehm|kopier|verwend|laden)/i,
+      // "übernehme von Automotive"
+      /übernehm.*(?:von|aus|für)/i,
+      // "kopiere von Automotive"
+      /kopier.*(?:von|aus|für)/i,
+      // "lade Automotive"
+      /(?:lade|hol|nimm).*(?:kunde|customer|assessment|\w+)/i,
     ],
     en: [
-      /(?:fill|copy|use|import).*(?:from|based on).*(?:customer|assessment)/i,
-      /(?:data|answers).*(?:from).*(?:customer)/i,
-      /(?:based on).*(?:customer)/i,
+      // "fill based on Automotive"
+      /(?:fill|copy|use|import|load|get|take).*(?:from|based|with|for)/i,
+      // "based on customer Automotive"
+      /based\s+on/i,
+      // "data from Automotive"
+      /(?:data|answers).*(?:from|of)/i,
+      // "copy from Automotive"
+      /copy.*(?:from|of)/i,
+      // "load Automotive"
+      /(?:load|get|take).*(?:customer|assessment|\w+)/i,
     ],
   };
   
   for (const pattern of fillPatterns[language] || fillPatterns.de) {
     if (pattern.test(lowerMsg)) {
-      // Extract customer name
-      const customerMatch = lowerMsg.match(/(?:kunde|customer|von|from|basierend auf|based on)\s+["""]?(\w+(?:\s+\w+)?)["""]?/i);
-      const customerName = customerMatch ? customerMatch[1] : extractCustomerName(lowerMsg);
+      // Extract customer name from various positions in the message
+      const customerName = extractCustomerNameAdvanced(lowerMsg);
       
       return {
         intent: INTENTS.FILL_FROM_CUSTOMER,
@@ -209,6 +227,64 @@ function extractCustomerName(message) {
     const match = message.match(pattern);
     if (match && match[1]) {
       return match[1].trim();
+    }
+  }
+  
+  return null;
+}
+
+/**
+ * Advanced customer name extraction - tries multiple strategies
+ * @param {string} message - User message
+ * @returns {string|null} - Extracted customer name or null
+ */
+function extractCustomerNameAdvanced(message) {
+  const lowerMsg = message.toLowerCase();
+  
+  // Strategy 1: Look for quoted names
+  const quotedMatch = message.match(/["""]([^"""]+)["""]/);
+  if (quotedMatch) return quotedMatch[1].trim();
+  
+  // Strategy 2: Look for "Kunde X" or "Customer X" pattern
+  const kundeMatch = message.match(/(?:kunde|customer)\s+([A-Za-zÄÖÜäöüß0-9]+(?:\s+[A-Za-zÄÖÜäöüß0-9]+)?)/i);
+  if (kundeMatch) return kundeMatch[1].trim();
+  
+  // Strategy 3: Look for "basierend auf X" or "based on X"
+  const basedMatch = message.match(/(?:basierend\s+auf|based\s+on)\s+(?:kunde\s+)?([A-Za-zÄÖÜäöüß0-9]+(?:\s+[A-Za-zÄÖÜäöüß0-9]+)?)/i);
+  if (basedMatch) return basedMatch[1].trim();
+  
+  // Strategy 4: Look for "von X" or "from X"
+  const vonMatch = message.match(/(?:von|from|für|for)\s+(?:kunde\s+)?([A-Za-zÄÖÜäöüß0-9]+(?:\s+[A-Za-zÄÖÜäöüß0-9]+)?)/i);
+  if (vonMatch) return vonMatch[1].trim();
+  
+  // Strategy 5: Look for "mit X" or "with X"
+  const mitMatch = message.match(/(?:mit|with)\s+(?:kunde\s+)?([A-Za-zÄÖÜäöüß0-9]+(?:\s+[A-Za-zÄÖÜäöüß0-9]+)?)/i);
+  if (mitMatch) return mitMatch[1].trim();
+  
+  // Strategy 6: Look for capitalized words that might be names (excluding common words)
+  const commonWords = ['fill', 'füll', 'aus', 'based', 'basierend', 'auf', 'on', 'from', 'von', 'mit', 'with', 'kunde', 'customer', 'daten', 'data', 'übernehm', 'kopier', 'lade', 'load', 'get', 'hol', 'nimm', 'take', 'use', 'verwend', 'import', 'assessment'];
+  const words = message.split(/\s+/);
+  for (const word of words) {
+    // Check if word starts with uppercase and is not a common word
+    if (/^[A-ZÄÖÜ]/.test(word) && !commonWords.includes(word.toLowerCase())) {
+      // Clean up the word (remove punctuation)
+      const cleaned = word.replace(/[.,!?;:]+$/, '');
+      if (cleaned.length > 2) {
+        return cleaned;
+      }
+    }
+  }
+  
+  // Strategy 7: Get the last significant word (often the customer name)
+  const significantWords = words.filter(w => 
+    w.length > 2 && 
+    !commonWords.includes(w.toLowerCase()) &&
+    !/^(das|die|der|den|dem|ein|eine|einer|einem|einen|the|a|an)$/i.test(w)
+  );
+  if (significantWords.length > 0) {
+    const lastWord = significantWords[significantWords.length - 1].replace(/[.,!?;:]+$/, '');
+    if (lastWord.length > 2) {
+      return lastWord;
     }
   }
   
