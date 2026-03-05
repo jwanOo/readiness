@@ -1481,6 +1481,31 @@ export default function AIReadinessCheck({
           customerName={answers['general_0'] || assessment?.customer_name || ''}
           userId={user?.id}
           assessmentId={assessment?.id}
+          sections={allSections}
+          // Action callbacks for navigational AI
+          onFillAnswers={(newAnswers) => {
+            // Merge new answers with existing ones
+            setAnswers(prev => ({ ...prev, ...newAnswers }));
+          }}
+          onExport={(format) => {
+            const rd = computeReadinessFromAnswers(answers);
+            if (format === 'pdf') {
+              exportToPDF(allSections, answers, industry, rd, language);
+            } else if (format === 'docx' || format === 'word') {
+              exportToWord(allSections, answers, industry, rd, language);
+            } else if (format === 'pptx') {
+              generatePowerPoint(assessment || { customer_name: answers['general_0'] || 'Customer', industry: selectedIndustry }, answers, language);
+            }
+          }}
+          onNavigate={(sectionId) => {
+            // Find section index by ID
+            const idx = allSections.findIndex(s => s.id === sectionId);
+            if (idx >= 0) {
+              setActiveSection(idx);
+              setShowRecommendations(false);
+              setExportDone(false);
+            }
+          }}
         />
       )}
       

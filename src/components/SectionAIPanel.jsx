@@ -2,6 +2,20 @@ import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { INDUSTRIES } from '../lib/constants';
 import { computeReadinessFromAnswers, calculateOverallScore } from '../lib/scoring';
+import {
+  recognizeIntent,
+  INTENTS,
+  searchAssessments,
+  getAssessmentAnswers,
+  getUserAssessments,
+  formatSearchResults,
+  formatFillConfirmation,
+  formatExportMessage,
+  formatNavigationMessage,
+  getSectionTitle,
+  findSectionIndex,
+  SECTION_MAPPINGS,
+} from '../lib/aiActionService';
 
 /**
  * Simple markdown renderer for chat messages
@@ -111,6 +125,11 @@ export default function SectionAIPanel({
   customerName = '',
   userId = null,
   assessmentId = null,
+  sections = [],
+  // Action callbacks for navigational AI
+  onFillAnswers = null,
+  onExport = null,
+  onNavigate = null,
 }) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [showChatList, setShowChatList] = useState(false);
@@ -592,6 +611,81 @@ ANWEISUNGEN:
 Sei prägnant und hilfreich. Antworte auf Deutsch.`;
   };
 
+  // State for action handling
+  const [pendingAction, setPendingAction] = useState(null);
+  const [searchResults, setSearchResults] = useState([]);
+
+  /**
+   * Handle action button clicks from chat messages
+   */
+  const handleActionClick = async (action) => {
+    if (action.type === 'fill' && action.assessmentId) {
+      // Fill answers from selected assessment
+      setChatLoading(true);
+      try {
+        const answers = await getAssessmentAnswers(action.assessmentId);
+        const answersCount = Object.keys(answers).length;
+        
+        if (onFillAnswers && answersCount > 0) {
+          onFillAnswers(answers);
+          const result = searchResults.find(r => r.id === action.assessmentId);
+          const confirmMsg = formatFillConfirmation(
+            result || { customerName: 'Assessment' },
+            answersCount,
+            language
+          );
+          setChatMessages(prev => [...prev, { 
+            role: 'assistant', 
+            content: confirmMsg.message,
+            actions: confirmMsg.actions,
+          }]);
+        } else {
+          setChatMessages(prev => [...prev, { 
+            role: 'assistant', 
+            content: language === 'de' 
+              ? '⚠️ Keine Antworten zum Kopieren gefunden.'
+              : '⚠️ No answers found to copy.',
+          }]);
+        }
+      } catch (error) {
+        console.error('Error filling answers:', error);
+        setChatMessages(prev => [...prev, { 
+          role: 'assistant', 
+          content: language === 'de' 
+            ? '❌ Fehler beim Laden der Antworten.'
+            : '❌ Error loading answers.',
+          isError: true,
+        }]);
+      } finally {
+        setChatLoading(false);
+      }
+    } else if (action.type === 'export' && action.format) {
+      // Trigger export
+      if (onExport) {
+        const exportMsg = formatExportMessage(action.format, language);
+        setChatMessages(prev => [...prev, { 
+          role: 'assistant', 
+          content: exportMsg.message,
+        }]);
+        onExport(action.format);
+      }
+    } else if (action.type === 'navigate' && action.target) {
+      // Navigate to section
+      if (onNavigate) {
+        const sectionTitle = getSectionTitle(action.target, language);
+        const navMsg = formatNavigationMessage(action.target, sectionTitle, language);
+        setChatMessages(prev => [...prev, { 
+          role: 'assistant', 
+          content: navMsg.message,
+        }]);
+        onNavigate(action.target);
+      }
+    }
+  };
+
+  /**
+   * Process user message - check for actions first, then fall back to AI
+   */
   const handleSendMessage = async () => {
     if (!chatInput.trim() || chatLoading) return;
 
@@ -602,6 +696,116 @@ Sei prägnant und hilfreich. Antworte auf Deutsch.`;
     setStreamingMessage('');
 
     try {
+      // First, check for action intents
+      const { intent, params, confidence } = recognizeIntent(userMessage, language);
+      
+      if (confidence >= 0.7) {
+        // Handle recognized action
+        switch (intent) {
+          case INTENTS.FILL_FROM_CUSTOMER: {
+            // Search for matching assessments
+            const searchMsg = language === 'de'
+              ? `🔍 Suche nach Assessments${params.customerName ? ` für "${params.customerName}"` : ''}...`
+              : `🔍 Searching for assessments${params.customerName ? ` for "${params.customerName}"` : ''}...`;
+            
+            setChatMessages(prev => [...prev, { role: 'assistant', content: searchMsg }]);
+            
+            const results = await searchAssessments(params.customerName, userId);
+            setSearchResults(results);
+            
+            const formatted = formatSearchResults(results, language);
+            setChatMessages(prev => [...prev, { 
+              role: 'assistant', 
+              content: formatted.message,
+              actions: formatted.actions,
+            }]);
+            setChatLoading(false);
+            return;
+          }
+          
+          case INTENTS.EXPORT_DOCUMENT: {
+            if (onExport) {
+              const exportMsg = formatExportMessage(params.format, language);
+              setChatMessages(prev => [...prev, { 
+                role: 'assistant', 
+                content: exportMsg.message,
+                actions: exportMsg.actions,
+              }]);
+              onExport(params.format);
+            } else {
+              setChatMessages(prev => [...prev, { 
+                role: 'assistant', 
+                content: language === 'de'
+                  ? '⚠️ Export-Funktion ist nicht verfügbar.'
+                  : '⚠️ Export function is not available.',
+              }]);
+            }
+            setChatLoading(false);
+            return;
+          }
+          
+          case INTENTS.NAVIGATE_TO: {
+            if (onNavigate && params.sectionName) {
+              const sectionTitle = getSectionTitle(params.sectionName, language);
+              const navMsg = formatNavigationMessage(params.sectionName, sectionTitle, language);
+              setChatMessages(prev => [...prev, { 
+                role: 'assistant', 
+                content: navMsg.message,
+              }]);
+              onNavigate(params.sectionName);
+            } else {
+              setChatMessages(prev => [...prev, { 
+                role: 'assistant', 
+                content: language === 'de'
+                  ? '⚠️ Abschnitt nicht gefunden. Verfügbare Abschnitte: SAP-Landschaft, BTP, Daten, KI, Organisation, Use Cases.'
+                  : '⚠️ Section not found. Available sections: SAP Landscape, BTP, Data, AI, Organization, Use Cases.',
+              }]);
+            }
+            setChatLoading(false);
+            return;
+          }
+          
+          case INTENTS.SHOW_ASSESSMENTS: {
+            const results = await getUserAssessments(userId, params.industryFilter);
+            setSearchResults(results);
+            
+            if (results.length === 0) {
+              setChatMessages(prev => [...prev, { 
+                role: 'assistant', 
+                content: language === 'de'
+                  ? '📋 Sie haben noch keine Assessments erstellt.'
+                  : '📋 You have not created any assessments yet.',
+              }]);
+            } else {
+              const header = language === 'de'
+                ? `📋 **Ihre Assessments (${results.length}):**\n\n`
+                : `📋 **Your Assessments (${results.length}):**\n\n`;
+              
+              const items = results.slice(0, 10).map((r, i) => 
+                `${i + 1}. **${r.customerName}** (${r.industryIcon} ${r.industryLabel}) - ${r.status === 'completed' ? '✅' : '🔄'}`
+              ).join('\n');
+              
+              setChatMessages(prev => [...prev, { 
+                role: 'assistant', 
+                content: header + items,
+                actions: results.slice(0, 5).map(r => ({
+                  type: 'fill',
+                  label: r.customerName,
+                  assessmentId: r.id,
+                })),
+              }]);
+            }
+            setChatLoading(false);
+            return;
+          }
+          
+          default:
+            // Fall through to AI for unknown intents
+            break;
+        }
+      }
+
+      // No action recognized or low confidence - use AI
       const conversationHistory = chatMessages.slice(-10).map(msg => ({
         role: msg.role,
         content: msg.content,
@@ -1185,7 +1389,8 @@ Sei prägnant und hilfreich. Antworte auf Deutsch.`;
                 key={i}
                 style={{
                   display: 'flex',
-                  justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start',
+                  flexDirection: 'column',
+                  alignItems: msg.role === 'user' ? 'flex-end' : 'flex-start',
                 }}
               >
                 <div
@@ -1203,6 +1408,66 @@ Sei prägnant und hilfreich. Antworte auf Deutsch.`;
                 >
                   {msg.role === 'user' ? msg.content : renderMarkdown(msg.content)}
                 </div>
+                
+                {/* Action buttons for assistant messages */}
+                {msg.role === 'assistant' && msg.actions && msg.actions.length > 0 && (
+                  <div style={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    gap: 8,
+                    marginTop: 8,
+                    maxWidth: '85%',
+                  }}>
+                    {msg.actions.map((action, j) => (
+                      <button
+                        key={j}
+                        onClick={() => handleActionClick(action)}
+                        disabled={chatLoading}
+                        style={{
+                          padding: '8px 14px',
+                          borderRadius: 20,
+                          border: '1px solid #2E86C1',
+                          background: action.type === 'fill' ? '#EBF5FB' : '#fff',
+                          color: '#2E86C1',
+                          fontSize: 12,
+                          fontWeight: 600,
+                          cursor: chatLoading ? 'not-allowed' : 'pointer',
+                          transition: 'all 0.2s',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          opacity: chatLoading ? 0.6 : 1,
+                        }}
+                        onMouseOver={(e) => {
+                          if (!chatLoading) {
+                            e.currentTarget.style.background = '#2E86C1';
+                            e.currentTarget.style.color = '#fff';
+                          }
+                        }}
+                        onMouseOut={(e) => {
+                          e.currentTarget.style.background = action.type === 'fill' ? '#EBF5FB' : '#fff';
+                          e.currentTarget.style.color = '#2E86C1';
+                        }}
+                      >
+                        {action.type === 'fill' && '📋'}
+                        {action.type === 'export' && (action.format === 'pdf' ? '📄' : action.format === 'pptx' ? '📊' : '📝')}
+                        {action.type === 'navigate' && '📍'}
+                        {action.label}
+                        {action.answersCount && (
+                          <span style={{
+                            background: '#2E86C1',
+                            color: '#fff',
+                            padding: '2px 6px',
+                            borderRadius: 10,
+                            fontSize: 10,
+                          }}>
+                            {action.answersCount}
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
             
