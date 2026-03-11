@@ -656,10 +656,24 @@ export async function generatePowerPoint(assessment, answers, language = 'de', o
   addFooter(closeSlide, pptx, date, customerName);
   updateProgress(23, 23);
   
-  // Save file
+  // Save file - use blob for browser compatibility (works on GitHub Pages)
   const cleanName = customerName.replace(/[^a-zA-Z0-9äöüÄÖÜß]/g, '_').substring(0, 30);
   const filename = `AI_Readiness_${cleanName}_${new Date().toISOString().slice(0, 10)}.pptx`;
-  await pptx.writeFile({ fileName: filename });
+  
+  // Generate blob and trigger download (browser-compatible method)
+  const blob = await pptx.write({ outputType: 'blob' });
+  
+  // Create download link and trigger it
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  
+  // Clean up the URL object
+  setTimeout(() => URL.revokeObjectURL(url), 100);
   
   return filename;
   } catch (error) {
