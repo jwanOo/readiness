@@ -25,9 +25,11 @@ const MAX_MESSAGES = 50           // Max number of messages in conversation
 const ALLOWED_ORIGINS = [
   'https://jwanoo.github.io',
   'https://JwanOo.github.io',
+  'https://jwanOo.github.io',
   'http://localhost:5173',
   'http://localhost:3000',
   'http://127.0.0.1:5173',
+  'http://localhost:4173', // Vite preview
 ]
 
 // Prompt injection patterns to detect and log
