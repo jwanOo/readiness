@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, useNavigate, useLocation, useParams } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { CollaborationProvider } from './contexts/CollaborationContext';
 import { LanguageProvider } from './i18n';
 import { supabase } from './lib/supabase';
 import Login from './components/Login';
@@ -116,12 +117,15 @@ function AssessmentWrapper() {
     );
   }
 
+  // Wrap with CollaborationProvider for real-time collaboration
   return (
-    <AIReadinessCheck 
-      assessment={assessment}
-      onBack={() => navigate('/')}
-      onNavigateToDashboard={() => navigate('/')}
-    />
+    <CollaborationProvider assessmentId={assessment?.id}>
+      <AIReadinessCheck 
+        assessment={assessment}
+        onBack={() => navigate('/')}
+        onNavigateToDashboard={() => navigate('/')}
+      />
+    </CollaborationProvider>
   );
 }
 

@@ -913,5 +913,386 @@ export default {
     notAnswered: "— nicht beantwortet —",
     footer: "SAP AI Readiness Check — erstellt mit AI Readiness Check Tool",
     confidential: "VERTRAULICH",
+    page: "Seite",
+    createdOn: "Erstellt am",
+    customer: "Kunde",
+    unknown: "Unbekannt",
+  },
+
+  // ═══════════════════════════════════════════════════════════════
+  // LOGIN PAGE
+  // ═══════════════════════════════════════════════════════════════
+  login: {
+    title: "AI Readiness Check",
+    subtitle: "Melden Sie sich an, um fortzufahren",
+    emailLabel: "E-Mail-Adresse",
+    emailPlaceholder: "ihre.email@firma.de",
+    passwordLabel: "Passwort",
+    passwordPlaceholder: "Ihr Passwort",
+    confirmPasswordLabel: "Passwort bestätigen",
+    confirmPasswordPlaceholder: "Passwort wiederholen",
+    loginButton: "Anmelden",
+    registerButton: "Registrieren",
+    magicLinkButton: "Magic Link senden",
+    setPasswordButton: "Passwort setzen",
+    switchToRegister: "Noch kein Konto? Registrieren",
+    switchToLogin: "Bereits ein Konto? Anmelden",
+    switchToMagicLink: "Lieber Magic Link verwenden?",
+    switchToPassword: "Lieber mit Passwort anmelden?",
+    errors: {
+      invitationProcessing: "Fehler beim Verarbeiten der Einladung: ",
+      registrationSuccess: "Registrierung erfolgreich! Bitte bestätigen Sie Ihre E-Mail.",
+      magicLinkSent: "Magic Link wurde gesendet! Bitte prüfen Sie Ihre E-Mail.",
+      passwordMismatch: "Die Passwörter stimmen nicht überein",
+      passwordTooShort: "Das Passwort muss mindestens 6 Zeichen lang sein",
+      passwordSetSuccess: "Passwort erfolgreich gesetzt! Sie werden angemeldet...",
+      genericError: "Ein Fehler ist aufgetreten",
+    },
+    passwordStrength: {
+      tooShort: "Zu kurz",
+      weak: "Schwach",
+      medium: "Mittel",
+      strong: "Stark",
+    },
+    invitation: {
+      welcome: "Willkommen!",
+      setPassword: "Bitte setzen Sie Ihr Passwort, um Ihr Konto zu aktivieren.",
+    },
+  },
+
+  // ═══════════════════════════════════════════════════════════════
+  // ANALYTICS PAGE
+  // ═══════════════════════════════════════════════════════════════
+  analytics: {
+    title: "Analytics",
+    subtitle: "Kundenübersicht und AI Readiness Vergleich",
+    loading: "Lade Analytics...",
+    back: "← Zurück",
+    searchPlaceholder: "🔍 Suchen nach Kunde oder Branche...",
+    allIndustries: "Alle Branchen",
+    clearFilter: "✕ Filter zurücksetzen",
+    stats: {
+      totalCustomers: "Kunden gesamt",
+      actionNeeded: "⚠️ Handlungsbedarf",
+    },
+    topPerformers: {
+      title: "🏆 Top Performer",
+      empty: "Noch keine Top Performer",
+      emptyIcon: "🎯",
+    },
+    actionNeeded: {
+      title: "⚠️ Handlungsbedarf",
+      empty: "Keine Kunden mit Handlungsbedarf",
+      emptyIcon: "✅",
+    },
+    labels: {
+      sap: "SAP",
+      btp: "BTP",
+      data: "Daten",
+    },
+    table: {
+      customer: "Kunde",
+      industry: "Branche",
+      score: "Score",
+      status: "Status",
+      lastUpdated: "Aktualisiert",
+      actions: "Aktionen",
+    },
+    noData: "Keine Assessments gefunden",
+    noDataHint: "Erstellen Sie Ihr erstes Assessment, um Analytics zu sehen.",
+  },
+
+  // ═══════════════════════════════════════════════════════════════
+  // SCORING & RECOMMENDATIONS
+  // ═══════════════════════════════════════════════════════════════
+  scoring: {
+    categories: {
+      sapSystem: "SAP-System",
+      btpPlatform: "BTP & AI Platform",
+      dataMaturity: "Datenreife",
+    },
+    recommendations: {
+      sapMigration: "Migration auf S/4HANA und Clean-Core-Strategie empfohlen",
+      btpRequired: "SAP BTP mit AI Core und CPEA/BTPEA-Lizenzierung erforderlich",
+      dataStrategy: "Datenstrategie, Data Governance und zentrales DWH aufbauen",
+      sapJoule: "Joule aktivieren und Clean-Core-Strategie vorantreiben",
+      btpEvaluate: "SAP AI Core und SAP Business Data Cloud evaluieren",
+      dataGovernance: "Data Governance stärken und SAP Datasphere einführen",
+      sapReady: "SAP-System ist AI-ready",
+      btpReady: "BTP & AI Platform sind einsatzbereit",
+      dataReady: "Datenreife unterstützt KI-Initiativen",
+    },
+  },
+
+  // ═══════════════════════════════════════════════════════════════
+  // AI CHAT PANEL
+  // ═══════════════════════════════════════════════════════════════
+  aiChat: {
+    newChat: "Neuer Chat",
+    placeholder: "Frage zum Assessment stellen...",
+    thinking: "Denkt nach...",
+    error: "Fehler beim Generieren der Antwort",
+    retry: "Erneut versuchen",
+    sessions: "Chat-Verlauf",
+    noSessions: "Noch keine Chats",
+    deleteSession: "Chat löschen",
+    ragContext: {
+      databaseContext: "DATENBANK-KONTEXT",
+      currentAssessment: "AKTUELLES ASSESSMENT",
+      customer: "Kunde",
+      industry: "Branche",
+      status: "Status",
+      savedAnswers: "Gespeicherte Antworten",
+      aiReadinessScores: "AI Readiness Scores",
+      created: "Erstellt",
+      lastUpdated: "Zuletzt aktualisiert",
+      notAvailable: "k.A.",
+      noAnswersSaved: "(Noch keine Antworten in der Datenbank gespeichert)",
+      comparisonData: "VERGLEICHSDATEN",
+      totalOtherAssessments: "Gesamtanzahl anderer Assessments",
+      sameIndustryAssessments: "Assessments in gleicher Branche",
+      avgScoreSameIndustry: "Durchschnittsscore gleiche Branche",
+      avgScoreAllIndustries: "Durchschnittsscore alle Branchen",
+      comparisonSameIndustry: "VERGLEICH MIT GLEICHER BRANCHE",
+      topPerformers: "TOP PERFORMER (≥66%)",
+      industryOverview: "BRANCHEN-ÜBERSICHT",
+    },
+  },
+
+  // ═══════════════════════════════════════════════════════════════
+  // SECTION RECOMMENDATIONS
+  // ═══════════════════════════════════════════════════════════════
+  sectionRecommendations: {
+    title: "AI Empfehlungen",
+    subtitle: "Top 4 für diesen Abschnitt",
+    updating: "Aktualisiert...",
+    emptyState: "Beantworten Sie die Fragen, um personalisierte Empfehlungen zu erhalten.",
+    retry: "Erneut versuchen",
+    priority: "PRIORITÄT",
+    regenerate: "Neu generieren",
+    categories: {
+      quickWins: "⚡ Quick Wins",
+      risks: "⚠️ Risiken",
+      nextSteps: "👣 Nächste Schritte",
+      strategic: "🎯 Strategisch",
+    },
+  },
+
+  // ═══════════════════════════════════════════════════════════════
+  // RECOMMENDATIONS COMPONENT
+  // ═══════════════════════════════════════════════════════════════
+  recommendations: {
+    title: "🤖 KI-Empfehlungen",
+    generate: "Empfehlungen generieren",
+    regenerate: "Neu generieren",
+    generating: "Generiere...",
+    loading: "Lade...",
+    noRecs: "Noch keine Empfehlungen vorhanden.",
+    noRecsHint: "Klicken Sie auf \"Empfehlungen generieren\", um KI-basierte Empfehlungen zu erhalten.",
+    markDone: "Als erledigt markieren",
+    highPriority: "Hohe Priorität",
+    mediumPriority: "Mittlere Priorität",
+    lowPriority: "Niedrige Priorität",
+    errorGenerating: "Fehler beim Generieren",
+  },
+
+  // ═══════════════════════════════════════════════════════════════
+  // PDF EXPORT
+  // ═══════════════════════════════════════════════════════════════
+  pdfExport: {
+    header: "AI Readiness Check — adesso",
+    page: "Seite",
+    createdOn: "Erstellt am",
+    confidential: "VERTRAULICH",
+    customer: "Kunde",
+    unknown: "Unbekannt",
+    industry: "Branche",
+    general: "Allgemein",
+    date: "Datum",
+    progress: "Fortschritt",
+    questions: "Fragen",
+    aiReadinessAssessment: "AI Readiness Assessment",
+    overallRating: "Gesamtbewertung AI Readiness",
+    sapSystem: "SAP System",
+    btpPlatform: "BTP & AI Platform",
+    dataMaturity: "Datenreife",
+    recommendations: "Empfehlungen",
+    industrySpecific: "Branchenspezifisch",
+    notAnswered: "— nicht beantwortet —",
+    footer: "SAP AI Readiness Check — erstellt mit AI Readiness Check Tool",
+  },
+
+  // ═══════════════════════════════════════════════════════════════
+  // PPTX EXPORT
+  // ═══════════════════════════════════════════════════════════════
+  pptxExport: {
+    agenda: "Agenda",
+    executiveSummary: "Executive Summary",
+    keyFindings: "Zentrale Erkenntnisse",
+    situationAnalysis: "Situationsanalyse",
+    currentState: "Aktueller Stand",
+    gapAnalysis: "Gap-Analyse",
+    riskAssessment: "Risikobewertung",
+    sapAiArchitecture: "SAP AI Architektur",
+    industryUseCases: "Branchenspezifische Use Cases",
+    recommendations: "Empfehlungen",
+    strategicPriorities: "Strategische Prioritäten",
+    quickWins: "Quick Wins (0-3 Monate)",
+    transformationRoadmap: "Transformations-Roadmap",
+    businessCase: "Business Case",
+    whyAdesso: "Warum adesso?",
+    nextSteps: "Nächste Schritte",
+    sourcesReferences: "Quellen & Referenzen",
+    meetsAdesso: "meets adesso",
+    inAiReadinessContext: "im AI Readiness Kontext",
+    overallScore: "Gesamtscore",
+    impact: "Impact",
+    effort: "Aufwand",
+    high: "Hoch",
+    medium: "Mittel",
+    low: "Niedrig",
+    mustHave: "Must Have",
+    shouldHave: "Should Have",
+    couldHave: "Could Have",
+    months: "Monate",
+    investment: "Investment",
+    roi: "ROI",
+    timeframe: "Zeitrahmen",
+    benchmark: "Benchmark",
+    industryAverage: "Branchendurchschnitt",
+    topPerformer: "Top Performer",
+    sapSystem: "SAP System",
+    btpAi: "BTP & AI",
+    dataMaturity: "Datenreife",
+    aiDisclaimer: "Dieses Dokument wurde mit KI-Unterstützung erstellt (adesso AI Hub).",
+    trends: {
+      joule: "SAP Joule als zentraler KI-Copilot für alle SAP-Anwendungen (2024/2025)",
+      genAi: "Generative AI Integration in SAP-Standardprozesse",
+      bdc: "SAP Business Data Cloud als Datenfundament für KI",
+      cleanCore: "Clean Core Strategie als Voraussetzung für KI-Adoption",
+    },
+  },
+
+  // ═══════════════════════════════════════════════════════════════
+  // AI SERVICE PROMPTS
+  // ═══════════════════════════════════════════════════════════════
+  aiService: {
+    industryRequirements: "🏭 Branchenspezifische Anforderungen",
+    industryHint: "Diese Fragen sind speziell auf Ihre Branche zugeschnitten und helfen, branchenspezifische KI-Potenziale zu identifizieren.",
+    industryTips: [
+      "Branchenspezifische KI-Use-Cases haben oft den höchsten ROI",
+      "Regulatorische Anforderungen variieren je nach Branche",
+      "Nutzen Sie Branchenwissen für KI-Differenzierung",
+    ],
+    systemPrompt: "Du bist ein erfahrener SAP- und KI-Berater bei adesso. Deine Aufgabe ist es, AI Readiness Assessments zu analysieren und konkrete, umsetzbare Empfehlungen zu geben.",
+    responseFormat: "Du musst NUR mit einem gültigen JSON-Array von Empfehlungen antworten.",
+    recommendationFormat: {
+      text: "Empfehlungstext (1-2 Sätze, beginnt mit Emoji)",
+      category: "quick_win | strategic | risk | next_step",
+      priority: "high | medium | low",
+      relevanceScore: "1-100 (wie relevant für diese spezifischen Antworten)",
+    },
+  },
+
+  // ═══════════════════════════════════════════════════════════════
+  // RECOMMENDATION SERVICE
+  // ═══════════════════════════════════════════════════════════════
+  recommendationService: {
+    systemPrompt: "Du bist ein SAP KI-Berater. Analysiere die Antworten und generiere 6-8 Empfehlungen mit Bewertung.",
+    section: "Abschnitt",
+    unknown: "Unbekannt",
+    customer: "Kunde",
+    industry: "Branche",
+    answers: "ANTWORTEN",
+    instructions: "ANWEISUNGEN",
+    instructionsList: [
+      "Generiere genau 6-8 Empfehlungen",
+      "Jede Empfehlung muss folgendes Format haben (JSON)",
+      "Fokussiere auf SAP-spezifische Verbesserungen",
+      "Sei prägnant und actionable",
+      "Mische verschiedene Kategorien",
+    ],
+    responseInstruction: "Antworte NUR mit einem JSON-Array der Empfehlungen.",
+  },
+
+  // ═══════════════════════════════════════════════════════════════
+  // AI ACTION SERVICE
+  // ═══════════════════════════════════════════════════════════════
+  aiActionService: {
+    answers: "Antworten",
+    noAnswers: "Keine Antworten",
+    andMore: "und {{count}} weitere",
+    sectionMappings: {
+      general: "Allgemeine Informationen",
+      landscape: "SAP-Systemlandschaft",
+      licensing: "Lizenzierung",
+      btp: "SAP BTP",
+      cloud: "Cloud & Integration",
+      aiSap: "KI im SAP-Umfeld",
+      aiNonSap: "Non-SAP KI",
+      data: "Datengrundlage",
+      security: "Compliance & Governance",
+      org: "Organisation & Kompetenzen",
+      useCases: "Use Cases & Priorisierung",
+    },
+    noMatchingAssessments: "Keine passenden Assessments gefunden",
+  },
+
+  // ═══════════════════════════════════════════════════════════════
+  // ANALYTICS AI PANEL
+  // ═══════════════════════════════════════════════════════════════
+  analyticsAiPanel: {
+    noDataAvailable: "Keine Kundendaten verfügbar.",
+    ragContext: {
+      header: "KUNDENDATEN-KONTEXT",
+      overview: "ÜBERSICHT",
+      totalCustomers: "Gesamtanzahl Kunden",
+      avgAiReadinessScore: "Durchschnittlicher AI Readiness Score",
+      topPerformers: "Top Performer (≥66%)",
+      actionNeeded: "Handlungsbedarf (<50%)",
+      industryDistribution: "BRANCHEN-VERTEILUNG",
+      customers: "Kunden",
+      customerList: "KUNDENLISTE (sortiert nach Score)",
+      score: "Score",
+      status: "Status",
+    },
+  },
+
+  // ═══════════════════════════════════════════════════════════════
+  // CONFIRMATION DIALOGS
+  // ═══════════════════════════════════════════════════════════════
+  confirmations: {
+    deleteAssessment: "Möchten Sie dieses Assessment wirklich löschen?",
+    deleteMultiple: "Möchten Sie {{count}} Assessments wirklich löschen?",
+  },
+
+  // ═══════════════════════════════════════════════════════════════
+  // ERROR MESSAGES
+  // ═══════════════════════════════════════════════════════════════
+  errors: {
+    createError: "Fehler beim Erstellen",
+    deleteError: "Fehler beim Löschen",
+    exportError: "Fehler beim Export",
+    loadError: "Fehler beim Laden",
+    saveError: "Fehler beim Speichern",
+    genericError: "Ein Fehler ist aufgetreten",
+    allowPopups: "Bitte erlauben Sie Pop-ups für den PDF-Export.",
+  },
+
+  // ═══════════════════════════════════════════════════════════════
+  // ROLES
+  // ═══════════════════════════════════════════════════════════════
+  roles: {
+    admin: "Administrator",
+    consultant: "Berater",
+  },
+
+  // ═══════════════════════════════════════════════════════════════
+  // SELECTION BAR
+  // ═══════════════════════════════════════════════════════════════
+  selectionBar: {
+    selected: "{{count}} ausgewählt",
+    deselectAll: "Auswahl aufheben",
+    deleteSelected: "Ausgewählte löschen",
   },
 };

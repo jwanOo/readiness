@@ -1,12 +1,14 @@
 /* ═══════════════════════════════════════════════════════════════
-   AI SERVICE - adesso AI Hub Integration
-   OpenAI Compatible API for AI-powered recommendations
+   AI SERVICE - adesso AI Hub Integration (via Supabase Edge Function)
+   Secure proxy - API key is stored server-side, not exposed to frontend
    ═══════════════════════════════════════════════════════════════ */
 
-// Configuration for adesso AI Hub
+import { supabase } from './supabase';
+
+// Configuration - API calls go through Supabase Edge Function
 const AI_CONFIG = {
-  baseUrl: 'https://adesso-ai-hub.3asabc.de/v1',
-  apiKey: 'sk-ccwu3ZNJMFCfQG76gRaGjg',
+  // Edge Function URL - API key is stored securely in Supabase secrets
+  edgeFunctionUrl: `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-proxy`,
   model: 'gpt-oss-120b-sovereign',
   maxTokens: 2000,
   temperature: 0.7,
@@ -271,16 +273,24 @@ export function getSectionHint(sectionId, language = 'de') {
 
 /**
  * Generate AI-powered recommendations based on assessment data
+ * Uses Supabase Edge Function as secure proxy to adesso AI Hub
  */
 export async function generateRecommendations(assessment, answers, scores, industry, language = 'de') {
   try {
     const prompt = buildPrompt(assessment, answers, scores, industry, language);
     
-    const response = await fetch(`${AI_CONFIG.baseUrl}/chat/completions`, {
+    // Get the current session for authentication
+    const { data: { session } } = await supabase.auth.getSession();
+    
+    // Call the Edge Function (secure proxy to AI Hub)
+    const response = await fetch(AI_CONFIG.edgeFunctionUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${AI_CONFIG.apiKey}`,
+        // Include Supabase auth headers for the Edge Function
+        ...(session?.access_token && {
+          'Authorization': `Bearer ${session.access_token}`,
+        }),
       },
       body: JSON.stringify({
         model: AI_CONFIG.model,
@@ -301,7 +311,7 @@ export async function generateRecommendations(assessment, answers, scores, indus
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      throw new Error(`AI Hub Error: ${response.status} - ${errorData.error?.message || 'Unknown error'}`);
+      throw new Error(`AI Service Error: ${response.status} - ${errorData.message || errorData.error || 'Unknown error'}`);
     }
 
     const data = await response.json();

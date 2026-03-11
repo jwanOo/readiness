@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { CollaborationProvider, useCollaboration } from '../contexts/CollaborationContext';
 import { useLanguage } from '../i18n';
 import { LanguageSwitcherCompact } from '../i18n/LanguageSwitcher';
 import MultiSelectDropdown from './MultiSelectDropdown';
@@ -9,6 +10,10 @@ import { generatePowerPoint } from '../lib/pptxExport';
 import Recommendations from './Recommendations';
 import SectionAIPanel from './SectionAIPanel';
 import SectionRecommendations from './SectionRecommendations';
+import HeatMap from './HeatMap';
+import RiskMatrix from './RiskMatrix';
+import PresenceIndicator, { TypingIndicator } from './PresenceIndicator';
+import { AutoFillButton, AutoFillPanel } from './AutoFillSuggestion';
 
 /* ═══════════════════════════════════════════════════════════════
    COMPLETE ADESSO INDUSTRY MAP (DE + CH)
@@ -985,9 +990,22 @@ export default function AIReadinessCheck({
 }) {
   const { user } = useAuth() || {};
   
-  // If we have an existing assessment, start at "fill" step with pre-selected industry
+  // If we have an existing assessment, start at "fill" step with pre-selected industries
   const [step, setStep] = useState(assessment ? "fill" : "select");
-  const [selectedIndustry, setSelectedIndustry] = useState(assessment?.industry || null);
+  // Support both single industry (legacy) and multiple industries
+  const [selectedIndustries, setSelectedIndustries] = useState(() => {
+    if (assessment?.industries) {
+      try {
+        const parsed = JSON.parse(assessment.industries);
+        return Array.isArray(parsed) ? parsed : [assessment.industry].filter(Boolean);
+      } catch {
+        return [assessment.industry].filter(Boolean);
+      }
+    }
+    return assessment?.industry ? [assessment.industry] : [];
+  });
+  // Keep selectedIndustry for backward compatibility (primary industry)
+  const selectedIndustry = selectedIndustries[0] || null;
   const [hovered, setHovered] = useState(null);
   const [answers, setAnswers] = useState({});
   const [activeSection, setActiveSection] = useState(0);
@@ -1004,12 +1022,19 @@ export default function AIReadinessCheck({
   const contentRef = useRef(null);
   const saveTimeoutRef = useRef(null);
   
-  // Real-time collaboration state
-  const [activeUsers, setActiveUsers] = useState([]);
-  const [realtimeEnabled, setRealtimeEnabled] = useState(false);
-  const [lastRemoteUpdate, setLastRemoteUpdate] = useState(null);
-  const realtimeChannelRef = useRef(null);
-  const presenceChannelRef = useRef(null);
+  // Real-time collaboration - use context if available
+  const collaboration = useCollaboration();
+  const { 
+    activeUsers = [], 
+    isConnected: realtimeEnabled = false,
+    broadcastAnswerUpdate,
+    broadcastTypingStart,
+    broadcastTypingStop,
+    updatePresence,
+    getTypingUsersForQuestion,
+    pendingConflict,
+    resolveConflict,
+  } = collaboration || {};
   
   // Use i18n context for language
   const { language, setLanguage, t, tSection } = useLanguage();
@@ -1293,24 +1318,85 @@ export default function AIReadinessCheck({
     return true;
   });
 
-  const allSections = (() => {
-    if (!selectedIndustry) return CORE_SECTIONS.filter(s => enabledCore[s.id]);
+  // Combine industry-specific questions from ALL selected industries
+  const allSections = useMemo(() => {
     const core = CORE_SECTIONS.filter(s => enabledCore[s.id]);
-    if (!showIndQ || !industry) return core;
-    const ind = industry.specificQuestions.map((sq, i) => ({
-      id: `ind_${i}`, title: `${industry.icon} ${sq.section}`, questions: sq.questions.map(q => ({ q: q.q, hint: q.hint })), isIndustry: true,
-    }));
+    
+    // If no industries selected or industry questions disabled, return only core sections
+    if (selectedIndustries.length === 0 || !showIndQ) {
+      return core;
+    }
+    
+    // Collect industry-specific sections from ALL selected industries
+    const industrySections = [];
+    let sectionCounter = 0;
+    
+    selectedIndustries.forEach((indKey, industryIndex) => {
+      const ind = INDUSTRIES[indKey];
+      if (!ind || !ind.specificQuestions) return;
+      
+      // Add each industry's specific questions as separate sections
+      ind.specificQuestions.forEach((sq, sqIndex) => {
+        industrySections.push({
+          id: `ind_${industryIndex}_${sqIndex}`,
+          title: `${ind.icon} ${sq.section}`,
+          questions: sq.questions.map(q => ({ q: q.q, hint: q.hint })),
+          isIndustry: true,
+          industryKey: indKey,
+          industryLabel: ind.label,
+          industryColor: ind.color,
+        });
+        sectionCounter++;
+      });
+    });
+    
+    // Insert industry sections after the AI SAP section
     const aiIdx = core.findIndex(s => s.id === "aiSap");
     const result = [...core];
-    result.splice(aiIdx >= 0 ? aiIdx + 1 : core.length, 0, ...ind);
+    result.splice(aiIdx >= 0 ? aiIdx + 1 : core.length, 0, ...industrySections);
+    
     return result;
-  })();
+  }, [CORE_SECTIONS, INDUSTRIES, selectedIndustries, enabledCore, showIndQ]);
 
   const totalQ = allSections.reduce((s,sec) => s + sec.questions.length, 0);
   const answeredQ = Object.values(answers).filter(v => v?.trim()).length;
   const progress = totalQ > 0 ? (answeredQ / totalQ) * 100 : 0;
 
-  const handleAnswer = (sid, qi, val) => setAnswers(p => ({ ...p, [`${sid}_${qi}`]: val }));
+  // Handle answer changes with real-time broadcast
+  const handleAnswer = (sid, qi, val) => {
+    const key = `${sid}_${qi}`;
+    setAnswers(p => ({ ...p, [key]: val }));
+    
+    // Broadcast to other users if collaboration is enabled
+    if (broadcastAnswerUpdate) {
+      broadcastAnswerUpdate(key, val);
+    }
+  };
+  
+  // Update presence when section changes
+  useEffect(() => {
+    if (updatePresence && allSections[activeSection]) {
+      updatePresence(allSections[activeSection].id);
+    }
+  }, [activeSection, allSections, updatePresence]);
+
+  // Listen for remote answer updates from collaboration
+  const remoteAnswers = collaboration?.remoteAnswers || {};
+  useEffect(() => {
+    if (Object.keys(remoteAnswers).length > 0) {
+      // Merge remote answers with local answers (remote takes precedence for new updates)
+      setAnswers(prev => {
+        const updated = { ...prev };
+        Object.entries(remoteAnswers).forEach(([key, remote]) => {
+          // Only update if remote is newer or local is empty
+          if (!prev[key] || remote.value !== prev[key]) {
+            updated[key] = remote.value;
+          }
+        });
+        return updated;
+      });
+    }
+  }, [remoteAnswers]);
 
   const gStyle = `
     @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=DM+Sans:wght@400;500;700&display=swap');
@@ -1335,8 +1421,15 @@ export default function AIReadinessCheck({
       <div style={{minHeight:"100vh",background:"#F7F9FC",position:"relative"}}>
         <AnimBG/><style>{gStyle}</style>
         <div style={{position:"relative",zIndex:1,maxWidth:"1060px",margin:"0 auto",padding:"40px 24px"}}>
-          {/* Language Switcher - Top Right */}
-          <div style={{position:"absolute",top:20,right:24,zIndex:10}}>
+          {/* Language Switcher & Presence Indicator - Top Right */}
+          <div style={{position:"absolute",top:20,right:24,zIndex:10,display:"flex",alignItems:"center",gap:12}}>
+            {assessment?.id && (
+              <PresenceIndicator 
+                activeUsers={activeUsers}
+                isConnected={realtimeEnabled}
+                currentSection={allSections[activeSection]?.id}
+              />
+            )}
             <LanguageSwitcherCompact />
           </div>
           
@@ -1513,6 +1606,17 @@ export default function AIReadinessCheck({
         {/* Sidebar */}
         <div style={{width:268,background:"#fff",borderRight:"1px solid #E8EDF2",padding:"16px 0",flexShrink:0,position:"sticky",top:0,height:"100vh",overflowY:"auto",display:"flex",flexDirection:"column"}}>
           <div style={{padding:"0 16px",marginBottom:16}}>
+            {/* Real-time Collaboration Indicator */}
+            {assessment?.id && (
+              <div style={{marginBottom:12}}>
+                <PresenceIndicator 
+                  activeUsers={activeUsers}
+                  isConnected={realtimeEnabled}
+                  currentSection={allSections[activeSection]?.id}
+                />
+              </div>
+            )}
+            
             {/* Dashboard Button - only show when editing existing assessment */}
             {onNavigateToDashboard && assessment && (
               <button 
@@ -1566,56 +1670,96 @@ export default function AIReadinessCheck({
           <div style={{flex:1,overflowY:"auto"}}>
             {/* Group sections into clusters */}
             {(() => {
-              // Define section clusters
-              const clusters = [
+              // Define core section clusters
+              const coreClusters = [
                 { id: 'basics', label: '📋 Grundlagen', icon: '📋', sections: ['general'] },
                 { id: 'sap', label: '💻 SAP Systeme', icon: '💻', sections: ['landscape', 'licensing', 'btp', 'cloud'] },
                 { id: 'ai', label: '🤖 KI & Daten', icon: '🤖', sections: ['aiSap', 'aiNonSap', 'data'] },
                 { id: 'org', label: '🏢 Organisation', icon: '🏢', sections: ['security', 'org', 'useCases'] },
-                { id: 'industry', label: `${industry?.icon || '⚡'} Branche`, icon: industry?.icon || '⚡', sections: [], isIndustry: true },
               ];
               
-              // Group sections by cluster
-              const groupedSections = clusters.map(cluster => {
-                if (cluster.isIndustry) {
-                  return {
-                    ...cluster,
-                    items: allSections.map((s, i) => ({ ...s, originalIndex: i })).filter(s => s.isIndustry)
-                  };
-                }
-                return {
-                  ...cluster,
-                  items: allSections.map((s, i) => ({ ...s, originalIndex: i })).filter(s => cluster.sections.includes(s.id))
-                };
-              }).filter(cluster => cluster.items.length > 0);
+              // Build grouped sections for core clusters
+              const groupedCoreSections = coreClusters.map(cluster => ({
+                ...cluster,
+                items: allSections.map((s, i) => ({ ...s, originalIndex: i })).filter(s => cluster.sections.includes(s.id))
+              })).filter(cluster => cluster.items.length > 0);
               
-              return groupedSections.map((cluster, ci) => (
+              // Build industry-specific clusters - one per selected industry
+              const industryClusters = selectedIndustries.map((indKey, industryIndex) => {
+                const ind = INDUSTRIES[indKey];
+                if (!ind) return null;
+                
+                // Get all sections belonging to this industry
+                const industrySections = allSections
+                  .map((s, i) => ({ ...s, originalIndex: i }))
+                  .filter(s => s.isIndustry && s.industryKey === indKey);
+                
+                if (industrySections.length === 0) return null;
+                
+                return {
+                  id: `industry_${indKey}`,
+                  label: `${ind.icon} ${ind.label}`,
+                  icon: ind.icon,
+                  color: ind.color,
+                  isIndustry: true,
+                  items: industrySections,
+                };
+              }).filter(Boolean);
+              
+              // Combine all clusters
+              const allClusters = [...groupedCoreSections, ...industryClusters];
+              
+              return allClusters.map((cluster, ci) => (
                 <div key={cluster.id} style={{marginBottom:4}}>
                   {/* Cluster Header */}
                   <div style={{
                     padding:"8px 16px",
                     fontSize:10,
                     fontWeight:700,
-                    color:cluster.isIndustry ? (industry?.color || "#8E44AD") : "#7F8C8D",
+                    color:cluster.isIndustry ? (cluster.color || "#8E44AD") : "#7F8C8D",
                     textTransform:"uppercase",
                     letterSpacing:"0.5px",
-                    background:cluster.isIndustry ? `${industry?.color || "#8E44AD"}08` : "#F7F9FC",
+                    background:cluster.isIndustry ? `${cluster.color || "#8E44AD"}08` : "#F7F9FC",
                     borderTop:ci > 0 ? "1px solid #E8EDF2" : "none",
                     marginTop:ci > 0 ? 4 : 0,
+                    display:"flex",
+                    alignItems:"center",
+                    gap:6,
                   }}>
-                    {cluster.label}
+                    {cluster.isIndustry && (
+                      <span style={{
+                        display:"inline-flex",
+                        alignItems:"center",
+                        justifyContent:"center",
+                        width:18,
+                        height:18,
+                        borderRadius:4,
+                        background:cluster.color || "#8E44AD",
+                        fontSize:10,
+                      }}>
+                        {cluster.icon}
+                      </span>
+                    )}
+                    <span style={{
+                      overflow:"hidden",
+                      textOverflow:"ellipsis",
+                      whiteSpace:"nowrap",
+                    }}>
+                      {cluster.isIndustry ? cluster.label.replace(cluster.icon, '').trim() : cluster.label}
+                    </span>
                   </div>
                   {/* Cluster Items */}
                   {cluster.items.map((s) => {
                     const sAns = s.questions.filter((_,qi)=>answers[`${s.id}_${qi}`]?.trim()).length;
                     const active = activeSection===s.originalIndex && !showRecommendations;
                     const canEdit = canEditSection(s.id);
+                    const itemColor = s.industryColor || cluster.color || "#1B3A5C";
                     return (
                       <div key={s.id} className="nav" onClick={()=>{setActiveSection(s.originalIndex);setShowRecommendations(false);setExportDone(false)}}
                         style={{
                           padding:"7px 16px 7px 24px",
                           background:active?"#EBF5FB":(!canEdit?"#F7F9FC":"transparent"),
-                          borderRight:active?"3px solid #2E86C1":"3px solid transparent",
+                          borderRight:active?`3px solid ${s.isIndustry ? itemColor : "#2E86C1"}`:"3px solid transparent",
                           display:"flex",
                           alignItems:"center",
                           justifyContent:"space-between",
@@ -1628,7 +1772,7 @@ export default function AIReadinessCheck({
                           <span style={{
                             fontSize:11,
                             fontWeight:active?700:500,
-                            color:!canEdit?"#95A5A6":(s.isIndustry?(industry?.color||"#1B3A5C"):"#1B3A5C"),
+                            color:!canEdit?"#95A5A6":(s.isIndustry?itemColor:"#1B3A5C"),
                             lineHeight:1.3,
                             overflow:"hidden",
                             textOverflow:"ellipsis",
@@ -1754,9 +1898,9 @@ export default function AIReadinessCheck({
             <div style={{animation:"fadeUp .5s ease-out"}}>
               <div style={{textAlign:"center",marginBottom:28}}>
                 <div style={{width:56,height:56,borderRadius:"50%",background:"linear-gradient(135deg,#27AE60,#1E8449)",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:28,marginBottom:12,color:"#fff"}}>✓</div>
-                <h2 style={{fontSize:22,fontWeight:800,color:"#1B3A5C"}}>Readiness Check Zusammenfassung</h2>
+                <h2 style={{fontSize:22,fontWeight:800,color:"#1B3A5C"}}>{language === 'en' ? 'Readiness Check Summary' : 'Readiness Check Zusammenfassung'}</h2>
                 <p style={{color:"#7F8C8D",fontSize:13,marginTop:6}}>
-                  {industry?.label||"Allgemein"} — {new Date().toLocaleDateString("de-DE")} — {answeredQ}/{totalQ} beantwortet
+                  {industry?.label||(language === 'en' ? 'General' : 'Allgemein')} — {new Date().toLocaleDateString(language === 'en' ? 'en-GB' : 'de-DE')} — {answeredQ}/{totalQ} {language === 'en' ? 'answered' : 'beantwortet'}
                 </p>
               </div>
 
@@ -1765,32 +1909,63 @@ export default function AIReadinessCheck({
                 const rd = computeReadinessFromAnswers(answers);
                 const overall = Math.round((rd.sap + rd.btp + rd.data) / 3);
                 const oCol = overall >= 66 ? "#27AE60" : overall >= 33 ? "#F39C12" : "#E74C3C";
+                const expT = EXPORT_TRANSLATIONS[language] || EXPORT_TRANSLATIONS.de;
                 return (
                   <div style={{background:"#fff",borderRadius:16,padding:"28px 24px",marginBottom:28,border:"2px solid #E8EDF2",boxShadow:"0 4px 20px rgba(0,0,0,0.06)"}}>
                     <div style={{textAlign:"center",marginBottom:20}}>
-                      <h3 style={{fontSize:18,fontWeight:800,color:"#1B3A5C",marginBottom:4}}>🎯 AI Readiness Assessment</h3>
-                      <p style={{fontSize:12,color:"#7F8C8D"}}>Automatische Bewertung basierend auf Ihren Antworten</p>
+                      <h3 style={{fontSize:18,fontWeight:800,color:"#1B3A5C",marginBottom:4}}>🎯 {expT.aiReadinessAssessment}</h3>
+                      <p style={{fontSize:12,color:"#7F8C8D"}}>{language === 'en' ? 'Automatic assessment based on your answers' : 'Automatische Bewertung basierend auf Ihren Antworten'}</p>
                     </div>
                     <div style={{display:"flex",gap:8,justifyContent:"center",flexWrap:"wrap",marginBottom:20}}>
-                      <GaugeMeter value={rd.sap} label="SAP System" sublabel="S/4HANA, Clean Core, Joule"/>
-                      <GaugeMeter value={rd.btp} label="BTP & AI Platform" sublabel="AI Core, Datasphere, BDC"/>
-                      <GaugeMeter value={rd.data} label="Datenreife" sublabel="Qualität, Governance, DWH"/>
+                      <GaugeMeter value={rd.sap} label={expT.sapSystem} sublabel={expT.sapSub}/>
+                      <GaugeMeter value={rd.btp} label={expT.btpPlatform} sublabel={expT.btpSub}/>
+                      <GaugeMeter value={rd.data} label={expT.dataMaturity} sublabel={expT.dataSub}/>
                     </div>
                     <div style={{textAlign:"center",padding:"16px 20px",background:overall>=66?"#EAFAF1":overall>=33?"#FEF9E7":"#FDEDEC",borderRadius:12,border:`1.5px solid ${oCol}30`}}>
-                      <div style={{fontSize:13,fontWeight:600,color:"#5D6D7E",marginBottom:4}}>Gesamtbewertung AI Readiness</div>
+                      <div style={{fontSize:13,fontWeight:600,color:"#5D6D7E",marginBottom:4}}>{expT.overallRating}</div>
                       <div style={{fontSize:28,fontWeight:800,color:oCol}}>{overall}%</div>
                       <div style={{fontSize:12,color:oCol,fontWeight:600,marginTop:2}}>
-                        {overall >= 66 ? "Ihr Unternehmen ist gut für SAP Business AI aufgestellt" :
-                         overall >= 33 ? "Grundlagen vorhanden — gezielte Maßnahmen empfohlen" :
-                         "Erheblicher Handlungsbedarf vor KI-Einführung"}
+                        {overall >= 66 ? expT.goodForAI :
+                         overall >= 33 ? expT.basicsPresent :
+                         expT.significantAction}
                       </div>
-                      {rd.sap < 33 && <div style={{fontSize:11,color:"#E74C3C",marginTop:8}}>⚠️ SAP-System: Migration auf S/4HANA und Clean-Core-Strategie empfohlen</div>}
-                      {rd.btp < 33 && <div style={{fontSize:11,color:"#E74C3C",marginTop:4}}>⚠️ BTP: SAP BTP mit AI Core und CPEA/BTPEA-Lizenzierung erforderlich</div>}
-                      {rd.data < 33 && <div style={{fontSize:11,color:"#E74C3C",marginTop:4}}>⚠️ Daten: Datenstrategie, Data Governance und zentrales DWH aufbauen</div>}
-                      {rd.sap >= 33 && rd.sap < 66 && <div style={{fontSize:11,color:"#F39C12",marginTop:8}}>💡 SAP-System: Joule aktivieren und Clean-Core-Strategie vorantreiben</div>}
-                      {rd.btp >= 33 && rd.btp < 66 && <div style={{fontSize:11,color:"#F39C12",marginTop:4}}>💡 BTP: SAP AI Core und SAP Business Data Cloud evaluieren</div>}
-                      {rd.data >= 33 && rd.data < 66 && <div style={{fontSize:11,color:"#F39C12",marginTop:4}}>💡 Daten: Data Governance stärken und SAP Datasphere einführen</div>}
+                      {rd.sap < 33 && <div style={{fontSize:11,color:"#E74C3C",marginTop:8}}>⚠️ {expT.sapMigration}</div>}
+                      {rd.btp < 33 && <div style={{fontSize:11,color:"#E74C3C",marginTop:4}}>⚠️ {expT.btpRequired}</div>}
+                      {rd.data < 33 && <div style={{fontSize:11,color:"#E74C3C",marginTop:4}}>⚠️ {expT.dataStrategy}</div>}
+                      {rd.sap >= 33 && rd.sap < 66 && <div style={{fontSize:11,color:"#F39C12",marginTop:8}}>💡 {expT.sapJoule}</div>}
+                      {rd.btp >= 33 && rd.btp < 66 && <div style={{fontSize:11,color:"#F39C12",marginTop:4}}>💡 {expT.btpEvaluate}</div>}
+                      {rd.data >= 33 && rd.data < 66 && <div style={{fontSize:11,color:"#F39C12",marginTop:4}}>💡 {expT.dataGovernance}</div>}
                     </div>
+                  </div>
+                );
+              })()}
+
+              {/* Heat Map Visualization */}
+              {(() => {
+                const rd = computeReadinessFromAnswers(answers);
+                return (
+                  <div style={{background:"#fff",borderRadius:16,padding:"24px",marginBottom:28,border:"1px solid #E8EDF2",boxShadow:"0 4px 20px rgba(0,0,0,0.04)"}}>
+                    <HeatMap 
+                      scores={rd}
+                      answers={answers}
+                      industry={industry}
+                      showLegend={true}
+                    />
+                  </div>
+                );
+              })()}
+
+              {/* Risk Assessment Matrix */}
+              {(() => {
+                const rd = computeReadinessFromAnswers(answers);
+                return (
+                  <div style={{background:"#fff",borderRadius:16,padding:"24px",marginBottom:28,border:"1px solid #E8EDF2",boxShadow:"0 4px 20px rgba(0,0,0,0.04)"}}>
+                    <RiskMatrix 
+                      answers={answers}
+                      scores={rd}
+                      industry={industry}
+                      showMatrix={true}
+                    />
                   </div>
                 );
               })()}
@@ -1983,7 +2158,7 @@ export default function AIReadinessCheck({
                         type="text" 
                         value={answers[`${sec.id}_${qi}`]||""} 
                         onChange={e=>canEdit && handleAnswer(sec.id,qi,e.target.value)} 
-                        placeholder={canEdit?"Bitte eingeben...":"—"}
+                        placeholder={canEdit ? t('questionnaire.placeholder.text') : t('common.labels.notAnswered')}
                         readOnly={!canEdit}
                         style={{
                           width:"100%",
@@ -2001,7 +2176,7 @@ export default function AIReadinessCheck({
                       <textarea 
                         value={answers[`${sec.id}_${qi}`]||""} 
                         onChange={e=>canEdit && handleAnswer(sec.id,qi,e.target.value)} 
-                        placeholder={canEdit?"Bitte beschreiben...":"—"} 
+                        placeholder={canEdit ? t('questionnaire.placeholder.textarea') : t('common.labels.notAnswered')} 
                         rows={3}
                         readOnly={!canEdit}
                         style={{

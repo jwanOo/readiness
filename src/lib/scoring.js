@@ -1,6 +1,16 @@
 /* ═══════════════════════════════════════════════════════════════
    AI READINESS SCORING UTILITIES
+   ═══════════════════════════════════════════════════════════════ 
+   
+   SECURITY NOTE: Client-side scoring is for UI feedback only.
+   The authoritative score is computed server-side via Edge Function.
+   Use fetchServerScore() to get the verified score.
    ═══════════════════════════════════════════════════════════════ */
+
+import { supabase } from './supabase';
+
+// Supabase Edge Function URL for server-side scoring
+const COMPUTE_SCORE_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/compute-score`;
 
 /**
  * Compute AI Readiness scores from assessment answers
@@ -308,4 +318,151 @@ export function aggregateAnalytics(assessmentsWithScores) {
     topPerformers,
     needsAttention
   };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SERVER-SIDE SCORING (AUTHORITATIVE)
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * Fetch server-computed score for an assessment
+ * This is the AUTHORITATIVE score - use this for official reports
+ * 
+ * @param {string} assessmentId - UUID of the assessment
+ * @returns {Promise<Object>} - { success, scores, recommendations, version, computed_at }
+ */
+export async function fetchServerScore(assessmentId) {
+  if (!assessmentId) {
+    throw new Error('Assessment ID is required');
+  }
+
+  try {
+    // Get the current session for authentication
+    const { data: { session } } = await supabase.auth.getSession();
+    
+    const response = await fetch(COMPUTE_SCORE_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session?.access_token || ''}`,
+        'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+      },
+      body: JSON.stringify({ assessment_id: assessmentId }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `Server error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error('[SCORING] Server score fetch failed:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get stored server score from assessment record
+ * Use this to display previously computed scores without re-computing
+ * 
+ * @param {string} assessmentId - UUID of the assessment
+ * @returns {Promise<Object|null>} - { computed_score, section_scores, score_computed_at, score_version }
+ */
+export async function getStoredServerScore(assessmentId) {
+  if (!assessmentId) {
+    return null;
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('assessments')
+      .select('computed_score, section_scores, score_computed_at, score_version')
+      .eq('id', assessmentId)
+      .single();
+
+    if (error) {
+      console.error('[SCORING] Failed to fetch stored score:', error);
+      return null;
+    }
+
+    // Return null if no score has been computed yet
+    if (!data.computed_score && !data.section_scores) {
+      return null;
+    }
+
+    return {
+      overall: data.computed_score,
+      sap: data.section_scores?.sap,
+      btp: data.section_scores?.btp,
+      data: data.section_scores?.data,
+      computedAt: data.score_computed_at,
+      version: data.score_version,
+      isServerScore: true,
+    };
+  } catch (error) {
+    console.error('[SCORING] Error fetching stored score:', error);
+    return null;
+  }
+}
+
+/**
+ * Compute and store server score, then return it
+ * Combines fetchServerScore with local caching
+ * 
+ * @param {string} assessmentId - UUID of the assessment
+ * @param {boolean} forceRecompute - If true, always recompute even if cached
+ * @returns {Promise<Object>} - Score object with isServerScore flag
+ */
+export async function getVerifiedScore(assessmentId, forceRecompute = false) {
+  if (!assessmentId) {
+    throw new Error('Assessment ID is required');
+  }
+
+  // Check for cached score first (unless force recompute)
+  if (!forceRecompute) {
+    const cached = await getStoredServerScore(assessmentId);
+    if (cached) {
+      return cached;
+    }
+  }
+
+  // Compute fresh score from server
+  const result = await fetchServerScore(assessmentId);
+  
+  if (result.success) {
+    return {
+      overall: result.scores.overall,
+      sap: result.scores.sap,
+      btp: result.scores.btp,
+      data: result.scores.data,
+      recommendations: result.recommendations,
+      computedAt: result.computed_at,
+      version: result.version,
+      isServerScore: true,
+    };
+  }
+
+  throw new Error('Failed to compute server score');
+}
+
+/**
+ * Check if a score needs recomputation
+ * Returns true if score is stale (older than threshold) or missing
+ * 
+ * @param {Object} assessment - Assessment object with score fields
+ * @param {number} maxAgeMinutes - Maximum age in minutes before considered stale
+ * @returns {boolean} - True if score should be recomputed
+ */
+export function isScoreStale(assessment, maxAgeMinutes = 60) {
+  if (!assessment) return true;
+  if (!assessment.computed_score && !assessment.section_scores) return true;
+  if (!assessment.score_computed_at) return true;
+
+  const computedAt = new Date(assessment.score_computed_at);
+  const now = new Date();
+  const ageMinutes = (now - computedAt) / (1000 * 60);
+
+  return ageMinutes > maxAgeMinutes;
 }

@@ -1,12 +1,15 @@
 /* ═══════════════════════════════════════════════════════════════
    RECOMMENDATION SERVICE - Background AI Recommendation Generation
    Generates recommendations in the background and selects the best 4
+   Uses Supabase Edge Function as secure proxy (API key stored server-side)
    ═══════════════════════════════════════════════════════════════ */
 
-// AI Configuration
+import { supabase } from './supabase';
+
+// AI Configuration - API calls go through Supabase Edge Function
 const AI_CONFIG = {
-  baseUrl: 'https://adesso-ai-hub.3asabc.de/v1',
-  apiKey: 'sk-ccwu3ZNJMFCfQG76gRaGjg',
+  // Edge Function URL - API key is stored securely in Supabase secrets
+  edgeFunctionUrl: `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-proxy`,
   model: 'gpt-oss-120b-sovereign',
   maxTokens: 1200,
   temperature: 0.7,
@@ -148,6 +151,7 @@ function getSectionAnswers(section, answers) {
 
 /**
  * Generate recommendations in the background
+ * Uses Supabase Edge Function as secure proxy to adesso AI Hub
  */
 async function generateRecommendationsBackground({
   section,
@@ -223,11 +227,18 @@ INSTRUCTIONS:
 
 Respond ONLY with a JSON array of recommendations.`;
 
-    const response = await fetch(`${AI_CONFIG.baseUrl}/chat/completions`, {
+    // Get the current session for authentication
+    const { data: { session } } = await supabase.auth.getSession();
+
+    // Call the Edge Function (secure proxy to AI Hub)
+    const response = await fetch(AI_CONFIG.edgeFunctionUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${AI_CONFIG.apiKey}`,
+        // Include Supabase auth headers for the Edge Function
+        ...(session?.access_token && {
+          'Authorization': `Bearer ${session.access_token}`,
+        }),
       },
       body: JSON.stringify({
         model: AI_CONFIG.model,
@@ -243,7 +254,10 @@ Respond ONLY with a JSON array of recommendations.`;
       }),
     });
 
-    if (!response.ok) throw new Error(`API Error: ${response.status}`);
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(`AI Service Error: ${response.status} - ${errorData.message || errorData.error || 'Unknown error'}`);
+    }
 
     const data = await response.json();
     const content = data.choices?.[0]?.message?.content || '';

@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { useLanguage } from '../i18n';
 import { INDUSTRIES, getIndustryInfo } from '../lib/constants';
 import { computeReadinessFromAnswers, calculateOverallScore, getScoreColor, getScoreLabel } from '../lib/scoring';
 import { RecommendationsModal } from './Recommendations';
@@ -11,6 +12,7 @@ import AnalyticsAIPanel from './AnalyticsAIPanel';
 export default function Analytics({ onSelectAssessment }) {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { language, t } = useLanguage();
   const [assessments, setAssessments] = useState([]);
   const [assessmentScores, setAssessmentScores] = useState({});
   const [assessmentAnswers, setAssessmentAnswers] = useState({});
@@ -25,13 +27,6 @@ export default function Analytics({ onSelectAssessment }) {
   const [recommendationCounts, setRecommendationCounts] = useState({});
   const [generatingRecs, setGeneratingRecs] = useState({});
   const autoGenerateRef = useRef(false);
-  
-  const [language, setLanguage] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('ai_readiness_language') || 'de';
-    }
-    return 'de';
-  });
 
   useEffect(() => {
     if (user) {
@@ -296,7 +291,7 @@ export default function Analytics({ onSelectAssessment }) {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
           <div style={{ textAlign: 'center' }}>
             <div style={{ fontSize: 48, marginBottom: 16 }}>📊</div>
-            <div style={{ fontSize: 16, color: '#5D6D7E' }}>Lade Analytics...</div>
+            <div style={{ fontSize: 16, color: '#5D6D7E' }}>{t('analytics.loading')}</div>
           </div>
         </div>
       </div>
@@ -311,14 +306,14 @@ export default function Analytics({ onSelectAssessment }) {
       <div className="analytics-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
           <Link to="/" className="btn btn-secondary" style={{ textDecoration: 'none' }}>
-            ← Zurück
+            {t('analytics.back')}
           </Link>
           <div>
             <h1 style={{ fontSize: 20, fontWeight: 800, color: '#1B3A5C', margin: 0 }}>
-              📊 Analytics Dashboard
+              📊 {t('analytics.title')}
             </h1>
             <p style={{ fontSize: 12, color: '#7F8C8D', margin: 0 }}>
-              Kundenübersicht und AI Readiness Vergleich
+              {t('analytics.subtitle')}
             </p>
           </div>
         </div>
@@ -332,7 +327,7 @@ export default function Analytics({ onSelectAssessment }) {
             <div style={{ flex: '1 1 250px', minWidth: 200 }}>
               <input
                 type="text"
-                placeholder="🔍 Suchen nach Kunde oder Branche..."
+                placeholder={t('analytics.searchPlaceholder')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 style={{
@@ -366,7 +361,7 @@ export default function Analytics({ onSelectAssessment }) {
                 minWidth: 180
               }}
             >
-              <option value="all">Alle Branchen</option>
+              <option value="all">{t('analytics.allIndustries')}</option>
               {Object.entries(INDUSTRIES).map(([key, ind]) => (
                 <option key={key} value={key}>{ind.icon} {ind.label}</option>
               ))}
@@ -391,7 +386,7 @@ export default function Analytics({ onSelectAssessment }) {
                   cursor: 'pointer'
                 }}
               >
-                ✕ Filter zurücksetzen
+                {t('analytics.clearFilter')}
               </button>
             )}
           </div>
@@ -401,15 +396,15 @@ export default function Analytics({ onSelectAssessment }) {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, marginBottom: 32 }}>
           <div className="card" style={{ background: 'linear-gradient(135deg, #1B3A5C 0%, #2E86C1 100%)', color: '#fff' }}>
             <div style={{ fontSize: 36, fontWeight: 800 }}>{filteredAssessments.length}</div>
-            <div style={{ fontSize: 14, opacity: 0.9 }}>Kunden gesamt</div>
+            <div style={{ fontSize: 14, opacity: 0.9 }}>{t('analytics.stats.totalCustomers')}</div>
           </div>
           <div className="card" style={{ background: 'linear-gradient(135deg, #27AE60 0%, #2ECC71 100%)', color: '#fff' }}>
             <div style={{ fontSize: 36, fontWeight: 800 }}>{topPerformers.length}</div>
-            <div style={{ fontSize: 14, opacity: 0.9 }}>🏆 Top Performer</div>
+            <div style={{ fontSize: 14, opacity: 0.9 }}>{t('analytics.topPerformers.title')}</div>
           </div>
           <div className="card" style={{ background: 'linear-gradient(135deg, #E74C3C 0%, #C0392B 100%)', color: '#fff' }}>
             <div style={{ fontSize: 36, fontWeight: 800 }}>{actionNeeded.length}</div>
-            <div style={{ fontSize: 14, opacity: 0.9 }}>⚠️ Handlungsbedarf</div>
+            <div style={{ fontSize: 14, opacity: 0.9 }}>{t('analytics.stats.actionNeeded')}</div>
           </div>
         </div>
 
@@ -418,13 +413,13 @@ export default function Analytics({ onSelectAssessment }) {
           {/* Top Performers */}
           <div>
             <h2 style={{ fontSize: 18, fontWeight: 700, color: '#27AE60', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
-              🏆 Top Performer
+              {t('analytics.topPerformers.title')}
               <span style={{ fontSize: 12, fontWeight: 500, color: '#7F8C8D' }}>({topPerformers.length})</span>
             </h2>
             {topPerformers.length === 0 ? (
               <div className="card" style={{ textAlign: 'center', padding: 40, color: '#95A5A6' }}>
-                <div style={{ fontSize: 32, marginBottom: 8 }}>🎯</div>
-                <div>Noch keine Top Performer</div>
+                <div style={{ fontSize: 32, marginBottom: 8 }}>{t('analytics.topPerformers.emptyIcon')}</div>
+                <div>{t('analytics.topPerformers.empty')}</div>
               </div>
             ) : (
               topPerformers.slice(0, 5).map(assessment => {
@@ -486,7 +481,7 @@ export default function Analytics({ onSelectAssessment }) {
                       </div>
                       <div style={{ flex: 1 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#7F8C8D', marginBottom: 3 }}>
-                          <span>Daten</span>
+                          <span>{t('analytics.labels.data')}</span>
                           <span>{score?.data || 0}%</span>
                         </div>
                         <div style={{ height: 6, background: '#E8EDF2', borderRadius: 3, overflow: 'hidden' }}>
@@ -503,13 +498,13 @@ export default function Analytics({ onSelectAssessment }) {
           {/* Action Needed */}
           <div>
             <h2 style={{ fontSize: 18, fontWeight: 700, color: '#E74C3C', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
-              ⚠️ Handlungsbedarf
+              {t('analytics.actionNeeded.title')}
               <span style={{ fontSize: 12, fontWeight: 500, color: '#7F8C8D' }}>({actionNeeded.length})</span>
             </h2>
             {actionNeeded.length === 0 ? (
               <div className="card" style={{ textAlign: 'center', padding: 40, color: '#95A5A6' }}>
-                <div style={{ fontSize: 32, marginBottom: 8 }}>✅</div>
-                <div>Keine Kunden mit dringendem Handlungsbedarf</div>
+                <div style={{ fontSize: 32, marginBottom: 8 }}>{t('analytics.actionNeeded.emptyIcon')}</div>
+                <div>{t('analytics.actionNeeded.empty')}</div>
               </div>
             ) : (
               actionNeeded.slice(0, 5).map(assessment => {
@@ -571,7 +566,7 @@ export default function Analytics({ onSelectAssessment }) {
                       </div>
                       <div style={{ flex: 1 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#7F8C8D', marginBottom: 3 }}>
-                          <span>Daten</span>
+                          <span>{t('analytics.labels.data')}</span>
                           <span>{score?.data || 0}%</span>
                         </div>
                         <div style={{ height: 6, background: '#E8EDF2', borderRadius: 3, overflow: 'hidden' }}>
@@ -589,15 +584,15 @@ export default function Analytics({ onSelectAssessment }) {
         {/* Full Customer List */}
         <div>
           <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1B3A5C', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
-            📋 Alle Kunden
+            📋 {t('analytics.table.customer')}
             <span style={{ fontSize: 12, fontWeight: 500, color: '#7F8C8D' }}>({filteredAssessments.length})</span>
           </h2>
           
           {filteredAssessments.length === 0 ? (
             <div className="card" style={{ textAlign: 'center', padding: 60, color: '#95A5A6' }}>
               <div style={{ fontSize: 48, marginBottom: 16 }}>🔍</div>
-              <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>Keine Kunden gefunden</div>
-              <div style={{ fontSize: 14 }}>Passen Sie Ihre Filterkriterien an.</div>
+              <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>{t('analytics.noData')}</div>
+              <div style={{ fontSize: 14 }}>{t('analytics.noDataHint')}</div>
             </div>
           ) : (
             <div style={{ display: 'grid', gap: 12 }}>
@@ -635,7 +630,7 @@ export default function Analytics({ onSelectAssessment }) {
                             {industry?.label || assessment.industry}
                           </div>
                           <div style={{ fontSize: 11, color: '#95A5A6', marginTop: 2 }}>
-                            {score?.answersCount || 0} Antworten • Aktualisiert: {new Date(assessment.updated_at || assessment.created_at).toLocaleDateString('de-DE')}
+                            {score?.answersCount || 0} {t('questionnaire.progress').split('/')[0].replace('{{answered}}', '')} • {t('analytics.table.lastUpdated')}: {new Date(assessment.updated_at || assessment.created_at).toLocaleDateString(language === 'de' ? 'de-DE' : 'en-US')}
                           </div>
                         </div>
                       </div>
@@ -678,7 +673,7 @@ export default function Analytics({ onSelectAssessment }) {
                             </div>
                           </div>
                           <div style={{ textAlign: 'center' }}>
-                            <div style={{ fontSize: 10, color: '#7F8C8D', marginBottom: 2 }}>Daten</div>
+                            <div style={{ fontSize: 10, color: '#7F8C8D', marginBottom: 2 }}>{t('analytics.labels.data')}</div>
                             <div style={{ 
                               width: 50, 
                               height: 6, 

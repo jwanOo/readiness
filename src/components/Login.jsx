@@ -284,7 +284,6 @@ export default function Login() {
             borderRadius: 40, 
             marginBottom: 20 
           }}>
-            <span style={{ fontSize: 22 }}>🤖</span>
             <span style={{ color: '#fff', fontWeight: 700, fontSize: 12, letterSpacing: 2, textTransform: 'uppercase' }}>
               AI Readiness Check
             </span>

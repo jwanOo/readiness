@@ -4,7 +4,42 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ai-readiness-check</title>
+    <title>AI Readiness Check - adesso</title>
+    
+    <!-- Security: Content Security Policy -->
+    <!-- Prevents XSS attacks by restricting script sources -->
+    <meta http-equiv="Content-Security-Policy" content="
+      default-src 'self';
+      script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net;
+      style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+      font-src 'self' https://fonts.gstatic.com;
+      img-src 'self' data: blob: https:;
+      connect-src 'self' 
+        https://*.supabase.co 
+        https://*.supabase.in 
+        wss://*.supabase.co 
+        wss://*.supabase.in
+        https://fcpceywaszttgwdwirao.supabase.co
+        https://fcpceywaszttgwdwirao.functions.supabase.co;
+      frame-src 'none';
+      object-src 'none';
+      base-uri 'self';
+      form-action 'self';
+      upgrade-insecure-requests;
+    ">
+    
+    <!-- Security: Prevent clickjacking -->
+    <meta http-equiv="X-Frame-Options" content="DENY">
+    
+    <!-- Security: Prevent MIME type sniffing -->
+    <meta http-equiv="X-Content-Type-Options" content="nosniff">
+    
+    <!-- Security: Referrer policy -->
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    
+    <!-- SEO and accessibility -->
+    <meta name="description" content="AI Readiness Check - Assess your organization's AI readiness with adesso">
+    <meta name="theme-color" content="#1B3A5C">
   </head>
   <body>
     <div id="root"></div>

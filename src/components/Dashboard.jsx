@@ -6,6 +6,7 @@ import { INDUSTRIES, STATUS_CONFIG, getIndustryInfo } from '../lib/constants';
 import { generatePDF } from '../lib/pdfExport';
 import { useLanguage } from '../i18n';
 import { LanguageSwitcherCompact } from '../i18n/LanguageSwitcher';
+import MultiSelectDropdown from './MultiSelectDropdown';
 
 export default function Dashboard({ onSelectAssessment, onCreateNew, onShowAnalytics }) {
   const { user, profile, signOut } = useAuth();
@@ -14,7 +15,7 @@ export default function Dashboard({ onSelectAssessment, onCreateNew, onShowAnaly
   const [myAssignments, setMyAssignments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [newAssessment, setNewAssessment] = useState({ customerName: '', industry: '' });
+  const [newAssessment, setNewAssessment] = useState({ customerName: '', industries: [] });
   const [creating, setCreating] = useState(false);
   const [activeTab, setActiveTab] = useState('my'); // 'my', 'assigned', 'all'
   
@@ -268,12 +269,17 @@ export default function Dashboard({ onSelectAssessment, onCreateNew, onShowAnaly
     setCreating(true);
 
     try {
+      // Store industries as JSON array, use first industry as primary for backward compatibility
+      const primaryIndustry = newAssessment.industries[0] || '';
+      const industriesJson = JSON.stringify(newAssessment.industries);
+      
       const { data, error } = await supabase
         .from('assessments')
         .insert([
           {
             customer_name: newAssessment.customerName,
-            industry: newAssessment.industry,
+            industry: primaryIndustry, // Primary industry for backward compatibility
+            industries: industriesJson, // All industries as JSON array
             created_by: user.id,
             status: 'draft',
           },
@@ -284,7 +290,7 @@ export default function Dashboard({ onSelectAssessment, onCreateNew, onShowAnaly
       if (error) throw error;
 
       setShowCreateModal(false);
-      setNewAssessment({ customerName: '', industry: '' });
+      setNewAssessment({ customerName: '', industries: [] });
       fetchAssessments();
       
       // Navigate to the new assessment
@@ -1180,19 +1186,75 @@ ${answers.length > 0 ? answers.map(a => `
               />
               
               <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#1B3A5C', marginBottom: 6 }}>
-                Branche *
+                {language === 'en' ? 'Industries *' : 'Branchen *'}
+                <span style={{ fontSize: 11, fontWeight: 400, color: '#7F8C8D', marginLeft: 8 }}>
+                  {language === 'en' ? '(Select one or more)' : '(Eine oder mehrere auswählen)'}
+                </span>
               </label>
-              <select
-                className="modal-select"
-                value={newAssessment.industry}
-                onChange={e => setNewAssessment(p => ({ ...p, industry: e.target.value }))}
-                required
-              >
-                <option value="">Branche auswählen...</option>
-                {Object.entries(INDUSTRIES).map(([key, ind]) => (
-                  <option key={key} value={key}>{ind.icon} {ind.label}</option>
-                ))}
-              </select>
+              <div style={{ marginBottom: 16 }}>
+                <MultiSelectDropdown
+                  options={Object.entries(INDUSTRIES).map(([key, ind]) => ({
+                    id: key,
+                    label: ind.label,
+                    sublabel: ind.desc,
+                    icon: ind.icon,
+                    color: ind.color,
+                  }))}
+                  selected={newAssessment.industries}
+                  onChange={(selectedIds) => setNewAssessment(p => ({ ...p, industries: selectedIds }))}
+                  placeholder={language === 'en' ? 'Select industries...' : 'Branchen auswählen...'}
+                  searchPlaceholder={language === 'en' ? 'Search industries...' : 'Branchen suchen...'}
+                  emptyMessage={language === 'en' ? 'No industries found' : 'Keine Branchen gefunden'}
+                  maxDisplay={3}
+                />
+              </div>
+              
+              {/* Show selected industries as tags */}
+              {newAssessment.industries.length > 0 && (
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ fontSize: 11, color: '#7F8C8D', marginBottom: 6 }}>
+                    {language === 'en' ? 'Selected industries:' : 'Ausgewählte Branchen:'}
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {newAssessment.industries.map(indKey => {
+                      const ind = INDUSTRIES[indKey];
+                      return ind ? (
+                        <span 
+                          key={indKey}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4,
+                            padding: '4px 10px',
+                            background: ind.color + '15',
+                            border: `1px solid ${ind.color}40`,
+                            borderRadius: 16,
+                            fontSize: 11,
+                            fontWeight: 600,
+                            color: ind.color,
+                          }}
+                        >
+                          {ind.icon} {ind.label}
+                          <span 
+                            onClick={() => setNewAssessment(p => ({ 
+                              ...p, 
+                              industries: p.industries.filter(i => i !== indKey) 
+                            }))}
+                            style={{ 
+                              cursor: 'pointer', 
+                              marginLeft: 4,
+                              opacity: 0.7,
+                              fontSize: 12,
+                            }}
+                          >
+                            ✕
+                          </span>
+                        </span>
+                      ) : null;
+                    })}
+                  </div>
+                </div>
+              )}
               
               <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
                 <button 
@@ -1201,15 +1263,15 @@ ${answers.length > 0 ? answers.map(a => `
                   onClick={() => setShowCreateModal(false)}
                   style={{ flex: 1 }}
                 >
-                  Abbrechen
+                  {txt.cancel}
                 </button>
                 <button 
                   type="submit"
                   className="dashboard-btn dashboard-btn-primary"
-                  disabled={creating}
+                  disabled={creating || newAssessment.industries.length === 0}
                   style={{ flex: 1 }}
                 >
-                  {creating ? '⏳ Erstelle...' : 'Assessment erstellen'}
+                  {creating ? `⏳ ${txt.creating}` : txt.create}
                 </button>
               </div>
             </form>
@@ -1269,7 +1331,27 @@ ${answers.length > 0 ? answers.map(a => `
 
 // Assessment Card Component
 function AssessmentCard({ assessment, onClick, showOwner, selectionMode, isSelected, onToggleSelect, onDelete, canDelete = true }) {
-  const industry = INDUSTRIES[assessment.industry];
+  // Parse multiple industries from JSON field, fallback to single industry
+  const getIndustries = () => {
+    if (assessment.industries) {
+      try {
+        const parsed = JSON.parse(assessment.industries);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map(key => ({ key, ...INDUSTRIES[key] })).filter(ind => ind.label);
+        }
+      } catch (e) {
+        // Fall back to single industry
+      }
+    }
+    // Fallback to single industry field
+    if (assessment.industry && INDUSTRIES[assessment.industry]) {
+      return [{ key: assessment.industry, ...INDUSTRIES[assessment.industry] }];
+    }
+    return [];
+  };
+  
+  const industries = getIndustries();
+  const primaryIndustry = industries[0] || null;
   
   const getStatusBadge = (status) => {
     const styles = {
@@ -1310,25 +1392,73 @@ function AssessmentCard({ assessment, onClick, showOwner, selectionMode, isSelec
             </div>
           )}
           
-          <div style={{ 
-            width: 48, 
-            height: 48, 
-            borderRadius: 12, 
-            background: industry?.color || '#2E86C1',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: 24,
-            flexShrink: 0
-          }}>
-            {industry?.icon || '📋'}
+          {/* Industry icon - show stacked icons if multiple industries */}
+          <div style={{ position: 'relative', width: 48, height: 48, flexShrink: 0 }}>
+            <div style={{ 
+              width: 48, 
+              height: 48, 
+              borderRadius: 12, 
+              background: primaryIndustry?.color || '#2E86C1',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: 24,
+            }}>
+              {primaryIndustry?.icon || '📋'}
+            </div>
+            {/* Show badge if multiple industries */}
+            {industries.length > 1 && (
+              <div style={{
+                position: 'absolute',
+                bottom: -4,
+                right: -4,
+                width: 20,
+                height: 20,
+                borderRadius: '50%',
+                background: '#1B3A5C',
+                color: '#fff',
+                fontSize: 10,
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                border: '2px solid #fff',
+              }}>
+                +{industries.length - 1}
+              </div>
+            )}
           </div>
-          <div>
+          <div style={{ flex: 1 }}>
             <div style={{ fontSize: 16, fontWeight: 700, color: '#1B3A5C', marginBottom: 4 }}>
               {assessment.customer_name}
             </div>
-            <div style={{ fontSize: 13, color: '#5D6D7E', marginBottom: 6 }}>
-              {industry?.label || assessment.industry}
+            
+            {/* Show all industries as tags */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 6 }}>
+              {industries.map((ind, idx) => (
+                <span 
+                  key={ind.key}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 3,
+                    padding: '2px 8px',
+                    background: ind.color + '15',
+                    border: `1px solid ${ind.color}30`,
+                    borderRadius: 12,
+                    fontSize: 11,
+                    fontWeight: 600,
+                    color: ind.color,
+                  }}
+                >
+                  {ind.icon} {ind.label}
+                </span>
+              ))}
+              {industries.length === 0 && (
+                <span style={{ fontSize: 13, color: '#95A5A6' }}>
+                  {assessment.industry || 'Keine Branche'}
+                </span>
+              )}
             </div>
             {/* Last Update Info */}
             <div style={{ 

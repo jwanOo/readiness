@@ -8,6 +8,7 @@ import PptxGenJS from 'pptxgenjs';
 import { INDUSTRIES } from './constants';
 import { computeReadinessFromAnswers, getReadinessLevel } from './scoring';
 import { SAP_AI_PRODUCTS, SAP_AI_USE_CASES, ALL_SOURCES, getRoadmapForScore } from './sapAIKnowledge';
+import { supabase } from './supabase';
 
 // ADESSO CORPORATE DESIGN CONSTANTS
 const ADESSO = {
@@ -21,10 +22,10 @@ const ADESSO = {
   margin: 0.47, slideWidth: 10, slideHeight: 5.625,
 };
 
-// AI CONFIGURATION
+// AI CONFIGURATION - API calls go through Supabase Edge Function
 const AI_CONFIG = {
-  baseUrl: 'https://adesso-ai-hub.3asabc.de/v1',
-  apiKey: 'sk-ccwu3ZNJMFCfQG76gRaGjg',
+  // Edge Function URL - API key is stored securely in Supabase secrets
+  edgeFunctionUrl: `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-proxy`,
   model: 'gpt-oss-120b-sovereign',
   maxTokens: 8000, temperature: 0.7,
 };
@@ -187,9 +188,19 @@ CONTEXT:
 Output ONLY valid JSON with same structure as German version.`;
 
   try {
-    const response = await fetch(`${AI_CONFIG.baseUrl}/chat/completions`, {
+    // Get the current session for authentication
+    const { data: { session } } = await supabase.auth.getSession();
+
+    // Call the Edge Function (secure proxy to AI Hub)
+    const response = await fetch(AI_CONFIG.edgeFunctionUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${AI_CONFIG.apiKey}` },
+      headers: { 
+        'Content-Type': 'application/json',
+        // Include Supabase auth headers for the Edge Function
+        ...(session?.access_token && {
+          'Authorization': `Bearer ${session.access_token}`,
+        }),
+      },
       body: JSON.stringify({
         model: AI_CONFIG.model,
         messages: [
@@ -199,7 +210,7 @@ Output ONLY valid JSON with same structure as German version.`;
         max_tokens: AI_CONFIG.maxTokens, temperature: AI_CONFIG.temperature,
       }),
     });
-    if (!response.ok) throw new Error(`AI API Error: ${response.status}`);
+    if (!response.ok) throw new Error(`AI Service Error: ${response.status}`);
     const data = await response.json();
     const content = data.choices?.[0]?.message?.content;
     const jsonMatch = content.match(/\{[\s\S]*\}/);
@@ -368,30 +379,62 @@ function addGanttTimeline(slide, phases, x, y, width, height, t) {
 
 // MAIN EXPORT FUNCTION
 export async function generatePowerPoint(assessment, answers, language = 'de', onProgress = null) {
-  const pptx = new PptxGenJS();
-  const t = TEXTS[language] || TEXTS.de;
-  
-  pptx.author = 'adesso SE';
-  pptx.title = `AI Readiness Check - ${assessment?.customer_name || 'Customer'}`;
-  pptx.subject = 'SAP AI Readiness Assessment - McKinsey/BCG Style';
-  pptx.company = 'adesso SE';
-  pptx.defineLayout({ name: 'LAYOUT_16x9', width: ADESSO.slideWidth, height: ADESSO.slideHeight });
-  pptx.layout = 'LAYOUT_16x9';
-  
-  const industry = INDUSTRIES[assessment?.industry];
-  const scores = computeReadinessFromAnswers(answers || {});
-  scores.overall = Math.round((scores.sap + scores.btp + scores.data) / 3);
-  const date = new Date().toLocaleDateString(language === 'de' ? 'de-DE' : 'en-US', { day: '2-digit', month: '2-digit', year: 'numeric' });
-  const customerName = assessment?.customer_name || (language === 'de' ? 'Kunde' : 'Customer');
-  
-  const updateProgress = (step, total) => onProgress && onProgress(Math.round((step / total) * 100));
-  updateProgress(1, 23);
-  
-  const sapAIData = await fetchSAPAIData(language);
-  updateProgress(2, 23);
-  
-  const ai = await generateAIContent(assessment, answers, scores, industry, language, sapAIData);
-  updateProgress(3, 23);
+  try {
+    const pptx = new PptxGenJS();
+    const t = TEXTS[language] || TEXTS.de;
+    
+    pptx.author = 'adesso SE';
+    pptx.title = `AI Readiness Check - ${assessment?.customer_name || 'Customer'}`;
+    pptx.subject = 'SAP AI Readiness Assessment - McKinsey/BCG Style';
+    pptx.company = 'adesso SE';
+    pptx.defineLayout({ name: 'LAYOUT_16x9', width: ADESSO.slideWidth, height: ADESSO.slideHeight });
+    pptx.layout = 'LAYOUT_16x9';
+    
+    const industry = INDUSTRIES[assessment?.industry] || null;
+    const scores = computeReadinessFromAnswers(answers || {});
+    scores.overall = Math.round(((scores.sap || 0) + (scores.btp || 0) + (scores.data || 0)) / 3);
+    const date = new Date().toLocaleDateString(language === 'de' ? 'de-DE' : 'en-US', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const customerName = assessment?.customer_name || (language === 'de' ? 'Kunde' : 'Customer');
+    
+    const updateProgress = (step, total) => {
+      try {
+        if (onProgress) onProgress(Math.round((step / total) * 100));
+      } catch (e) {
+        console.warn('Progress update failed:', e);
+      }
+    };
+    updateProgress(1, 23);
+    
+    let sapAIData;
+    try {
+      sapAIData = await fetchSAPAIData(language);
+    } catch (e) {
+      console.warn('Failed to fetch SAP AI data, using defaults:', e);
+      sapAIData = { latestTrends: [], useCases: [], products: [], fetchedAt: new Date().toISOString() };
+    }
+    updateProgress(2, 23);
+    
+    let ai;
+    try {
+      ai = await generateAIContent(assessment, answers, scores, industry, language, sapAIData);
+    } catch (e) {
+      console.warn('AI content generation failed, using fallback:', e);
+      ai = getFallbackContent(scores, industry, language, customerName);
+    }
+    // Ensure ai has all required properties
+    ai = {
+      keyMessage: ai?.keyMessage || (language === 'de' ? 'AI Readiness Assessment' : 'AI Readiness Assessment'),
+      executiveSummary: ai?.executiveSummary || { headline: '', supportingPoints: [], bottomLine: '' },
+      situationAnalysis: ai?.situationAnalysis || { currentState: [], strengthsWeaknesses: { strengths: [], weaknesses: [] } },
+      gapAnalysis: ai?.gapAnalysis || { matrix: [], riskAssessment: [], opportunityCost: '' },
+      industryUseCases: ai?.industryUseCases || [],
+      recommendations: ai?.recommendations || { mustHave: [], shouldHave: [], couldHave: [] },
+      roadmap: ai?.roadmap || { phases: [] },
+      businessCase: ai?.businessCase || { totalInvestment: '', roi: '', paybackPeriod: '', riskOfInaction: '', competitiveImplication: '' },
+      valueProposition: ai?.valueProposition || [],
+      nextSteps: ai?.nextSteps || [],
+    };
+    updateProgress(3, 23);
   
   // SLIDE 1: TITLE
   createTitleSlide(pptx, customerName, date, industry, t);
@@ -539,7 +582,10 @@ export async function generatePowerPoint(assessment, answers, language = 'de', o
   
   // SLIDE 16: RECOMMENDATIONS
   const recSlide = createContentSlide(pptx, t.strategicPriorities, date, customerName);
-  const allRecs = [...(ai.recommendations.mustHave || []).map(r => ({ ...r, type: t.mustHave, color: ADESSO.colors.danger })), ...(ai.recommendations.shouldHave || []).map(r => ({ ...r, type: t.shouldHave, color: ADESSO.colors.warning })), ...(ai.recommendations.couldHave || []).map(r => ({ ...r, type: t.couldHave, color: ADESSO.colors.success }))];
+  const mustHaveRecs = (ai.recommendations?.mustHave || []).map(r => ({ ...r, type: t.mustHave, color: ADESSO.colors.danger }));
+  const shouldHaveRecs = (ai.recommendations?.shouldHave || []).map(r => ({ ...r, type: t.shouldHave, color: ADESSO.colors.warning }));
+  const couldHaveRecs = (ai.recommendations?.couldHave || []).map(r => ({ ...r, type: t.couldHave, color: ADESSO.colors.success }));
+  const allRecs = [...mustHaveRecs, ...shouldHaveRecs, ...couldHaveRecs];
   allRecs.slice(0, 4).forEach((rec, i) => {
     const y = 1.0 + (i * 0.8);
     recSlide.addShape('rect', { x: ADESSO.margin, y, w: 0.08, h: 0.6, fill: { color: rec.color } });
@@ -616,4 +662,8 @@ export async function generatePowerPoint(assessment, answers, language = 'de', o
   await pptx.writeFile({ fileName: filename });
   
   return filename;
+  } catch (error) {
+    console.error('PowerPoint generation failed:', error);
+    throw new Error(`PowerPoint generation failed: ${error.message}`);
+  }
 }

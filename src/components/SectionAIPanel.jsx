@@ -108,10 +108,10 @@ const renderMarkdown = (text) => {
   );
 };
 
-// AI Configuration
+// AI Configuration - API calls go through Supabase Edge Function
 const AI_CONFIG = {
-  baseUrl: 'https://adesso-ai-hub.3asabc.de/v1',
-  apiKey: 'sk-ccwu3ZNJMFCfQG76gRaGjg',
+  // Edge Function URL - API key is stored securely in Supabase secrets
+  edgeFunctionUrl: `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-proxy`,
   model: 'gpt-oss-120b-sovereign',
   maxTokens: 1000,
   temperature: 0.7,
@@ -811,11 +811,18 @@ Sei prägnant und hilfreich. Antworte auf Deutsch.`;
         content: msg.content,
       }));
 
-      const response = await fetch(`${AI_CONFIG.baseUrl}/chat/completions`, {
+      // Get the current session for authentication
+      const { data: { session } } = await supabase.auth.getSession();
+
+      // Call the Edge Function (secure proxy to AI Hub)
+      const response = await fetch(AI_CONFIG.edgeFunctionUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${AI_CONFIG.apiKey}`,
+          // Include Supabase auth headers for the Edge Function
+          ...(session?.access_token && {
+            'Authorization': `Bearer ${session.access_token}`,
+          }),
         },
         body: JSON.stringify({
           model: AI_CONFIG.model,
@@ -826,64 +833,30 @@ Sei prägnant und hilfreich. Antworte auf Deutsch.`;
           ],
           max_tokens: AI_CONFIG.maxTokens,
           temperature: AI_CONFIG.temperature,
-          stream: true,
         }),
       });
 
       if (!response.ok) throw new Error(`API Error: ${response.status}`);
 
-      const contentType = response.headers.get('content-type');
-      
-      if (contentType?.includes('text/event-stream') || response.body) {
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let fullMessage = '';
+      // Parse JSON response from Edge Function
+      const data = await response.json();
+      const assistantMessage = data.choices?.[0]?.message?.content;
 
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split('\n');
-
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              const data = line.slice(6);
-              if (data === '[DONE]') continue;
-              
-              try {
-                const parsed = JSON.parse(data);
-                const content = parsed.choices?.[0]?.delta?.content;
-                if (content) {
-                  fullMessage += content;
-                  setStreamingMessage(fullMessage);
-                }
-              } catch (e) {}
-            }
-          }
+      if (assistantMessage) {
+        // Simulate typing effect for better UX
+        const words = assistantMessage.split(' ');
+        let displayedMessage = '';
+        
+        for (let i = 0; i < words.length; i++) {
+          displayedMessage += (i > 0 ? ' ' : '') + words[i];
+          setStreamingMessage(displayedMessage);
+          await new Promise(resolve => setTimeout(resolve, 20));
         }
-
-        if (fullMessage) {
-          setChatMessages(prev => [...prev, { role: 'assistant', content: fullMessage }]);
-        }
+        
+        setChatMessages(prev => [...prev, { role: 'assistant', content: assistantMessage }]);
         setStreamingMessage('');
       } else {
-        const data = await response.json();
-        const assistantMessage = data.choices?.[0]?.message?.content;
-
-        if (assistantMessage) {
-          const words = assistantMessage.split(' ');
-          let displayedMessage = '';
-          
-          for (let i = 0; i < words.length; i++) {
-            displayedMessage += (i > 0 ? ' ' : '') + words[i];
-            setStreamingMessage(displayedMessage);
-            await new Promise(resolve => setTimeout(resolve, 30));
-          }
-          
-          setChatMessages(prev => [...prev, { role: 'assistant', content: assistantMessage }]);
-          setStreamingMessage('');
-        }
+        throw new Error('No response content from AI');
       }
     } catch (err) {
       console.error('Error:', err);

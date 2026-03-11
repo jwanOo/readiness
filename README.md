@@ -113,6 +113,24 @@ ai-readiness-check/
 
 ## 🤖 AI Integration
 
+### Architecture (Secure)
+The AI integration uses a **secure proxy architecture** to protect API keys:
+
+```
+┌─────────────────┐     ┌──────────────────────┐     ┌─────────────────┐
+│  React App      │────▶│  Supabase Edge       │────▶│  adesso AI Hub  │
+│  (gh-pages)     │     │  Function (ai-proxy) │     │  API            │
+│                 │◀────│  [API Key in secrets]│◀────│                 │
+│  No API key!    │     │                      │     │                 │
+└─────────────────┘     └──────────────────────┘     └─────────────────┘
+```
+
+**Security Features:**
+- ✅ API key stored in Supabase Secrets (server-side only)
+- ✅ Never exposed in frontend JavaScript bundle
+- ✅ CORS protection for allowed origins
+- ✅ Request validation in Edge Function
+
 ### Silava AI Assistant
 The AI assistant uses the adesso-ai-hub API with the `gpt-oss-120b-sovereign` model:
 - **Assessment Page**: Context-aware help for each section
@@ -126,6 +144,36 @@ Real-time recommendations generated based on:
 - Industry context
 - SAP best practices
 - AI readiness benchmarks
+
+### Setting Up AI (Required for AI Features)
+
+1. **Install Supabase CLI**
+   ```bash
+   npm install -g supabase
+   ```
+
+2. **Login and Link Project**
+   ```bash
+   supabase login
+   supabase link --project-ref fcpceywaszttgwdwirao
+   ```
+
+3. **Set the AI Hub API Key as a Secret**
+   ```bash
+   supabase secrets set ADESSO_AI_HUB_API_KEY=your-api-key-here
+   ```
+
+4. **Deploy the Edge Function**
+   ```bash
+   supabase functions deploy ai-proxy
+   ```
+
+5. **Verify Deployment**
+   ```bash
+   supabase functions list
+   ```
+
+> ⚠️ **Important**: Never commit API keys to the repository. The key should only exist in Supabase Secrets.
 
 ## 🔐 Authentication
 

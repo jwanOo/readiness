@@ -2,10 +2,10 @@ import { useState, useRef, useEffect } from 'react';
 
 /**
  * Multi-Select Dropdown with Search
- * Allows selecting multiple team members with search functionality
+ * Allows selecting multiple items with search functionality
  */
 export default function MultiSelectDropdown({
-  options = [],           // Array of { id, label, sublabel? }
+  options = [],           // Array of { id, label, sublabel?, icon?, color? }
   selected = [],          // Array of selected IDs
   onChange,               // Callback with array of selected IDs
   placeholder = "Personen auswählen...",
@@ -276,23 +276,25 @@ export default function MultiSelectDropdown({
                       )}
                     </div>
 
-                    {/* Avatar */}
+                    {/* Avatar / Icon */}
                     <div
                       style={{
                         width: 32,
                         height: 32,
                         borderRadius: '50%',
-                        background: 'linear-gradient(135deg, #1B3A5C, #2E86C1)',
+                        background: opt.color 
+                          ? `linear-gradient(135deg, ${opt.color}, ${opt.color}CC)` 
+                          : 'linear-gradient(135deg, #1B3A5C, #2E86C1)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
                         color: '#fff',
-                        fontSize: 12,
+                        fontSize: opt.icon ? 16 : 12,
                         fontWeight: 700,
                         flexShrink: 0,
                       }}
                     >
-                      {opt.label?.charAt(0)?.toUpperCase() || '?'}
+                      {opt.icon || opt.label?.charAt(0)?.toUpperCase() || '?'}
                     </div>
 
                     {/* Name & Email */}
