@@ -1,0 +1,806 @@
+import streamlit as st
+import pandas as pd
+import os
+import subprocess
+import sys
+import io
+import threading
+import schedule
+import json
+import time as time_lib
+import re
+import urllib.parse
+from datetime import datetime
+from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, DataReturnMode, JsCode
+
+# --- Konfiguration der KI-Schnittstelle ---
+try:
+    import google.generativeai as genai
+    GEMINI_AVAILABLE = True
+except ImportError:
+    GEMINI_AVAILABLE = False
+
+# --- Konfiguration der Export-Module (PDF & PPTX) ---
+try:
+    from pptx import Presentation
+    from pptx.util import Inches, Pt
+    PPTX_AVAILABLE = True
+except ImportError:
+    PPTX_AVAILABLE = False
+
+try:
+    from fpdf import FPDF
+    PDF_AVAILABLE = True
+except ImportError:
+    PDF_AVAILABLE = False
+
+# Definition der Dateipfade
+RAW_FILE = "sap_ai_raw_data.csv"
+DB_FILE = "mein_sap_tracking.csv"
+CONFIG_FILE = "sap_ai_config.json"
+
+# Definition der durch adesso bearbeitbaren Spalten
+EDITABLE_COLUMNS = [
+    "Business Value according to Adesso",
+    "Restrictions of the use case",
+    "Contact Person",
+    "Priority",
+    "Useability for Sales Pitches",
+    "Tags"
+]
+
+STATUS_COLUMN = "Status"
+HISTORY_COLUMN = "Change History (Auto)"
+
+# 1. Konfiguration der Seite
+st.set_page_config(page_title="adesso business consulting | SAP AI", page_icon="🟦", layout="wide")
+
+# --- Laden und Speichern der permanenten Konfiguration ---
+def load_config():
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, 'r') as f:
+                return json.load(f)
+        except:
+            pass
+    return {"scheduler_active": False, "scheduled_time": "00:00", "last_sync_time": "Noch nie"}
+
+def save_config(config):
+    with open(CONFIG_FILE, 'w') as f:
+        json.dump(config, f)
+
+config = load_config()
+
+# Initialisierung der Session States
+if 'gemini_chat' not in st.session_state: st.session_state.gemini_chat = None
+if 'generated_pitch' not in st.session_state: st.session_state.generated_pitch = ""
+if 'generated_email' not in st.session_state: st.session_state.generated_email = ""
+if 'generated_objection' not in st.session_state: st.session_state.generated_objection = ""
+if 'generated_tech' not in st.session_state: st.session_state.generated_tech = ""
+
+# 2. Definition des CSS-Stylings
+st.markdown("""
+    <style>
+    .reportview-container { background-color: #F8F9FA; }
+    .adesso-header {
+        background-color: #006EC7; 
+        background-image: linear-gradient(135deg, #005B9F 0%, #006EC7 100%);
+        padding: 24px; border-radius: 8px; color: white; margin-bottom: 25px;
+    }
+    .status-box { padding: 10px; border-radius: 5px; margin-bottom: 10px; font-weight: bold; text-align: center; font-size: 0.9rem; }
+    .status-active { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+    .status-inactive { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+    .counter-box {
+        background-color: #ffffff; border-left: 5px solid #006EC7;
+        padding: 10px 15px; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); text-align: center;
+    }
+    .counter-val { color: #006EC7; font-weight: bold; font-size: 1.2rem; }
+    .counter-label { font-size: 0.8rem; color: #666; }
+    .chat-container { border-left: 2px solid #E0E0E0; padding-left: 20px; height: 100%; }
+    .toolbox-box { background-color: #eef7ff; padding: 20px; border-radius: 8px; border: 1px solid #b8daff; margin-top: 15px;}
+    .outlook-btn { background-color: #0078D4; color: white !important; padding: 10px 20px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block; margin-top: 10px;}
+    .outlook-btn:hover { background-color: #005A9E; }
+    </style>
+""", unsafe_allow_html=True)
+
+# --- Web-Scraping Funktion für SAP-Detailseiten ---
+def lese_sap_detail_seite(url: str) -> str:
+    import subprocess, sys, os
+    clean_url = url.strip()
+    if not clean_url.startswith("http"): clean_url = "https://" + clean_url
+    script_code = f"""
+import sys
+try:
+    from playwright.sync_api import sync_playwright
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True, args=["--disable-blink-features=AutomationControlled"])
+        context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+        page = context.new_page()
+        page.goto("{clean_url}", wait_until="load", timeout=45000)
+        page.wait_for_timeout(5000)
+        page.evaluate('document.querySelectorAll(\\'[id*="trustarc"], [class*="overlay"], .truste-banner\\').forEach(el => el.remove()); document.body.style.overflow = \\'auto\\';')
+        content = page.locator("body").inner_text()
+        print(content[:15000])
+        browser.close()
+except Exception as e:
+    print("ERROR_SCRAPER:", str(e))
+"""
+    script_path = "temp_scraper.py"
+    with open(script_path, "w", encoding="utf-8") as f: f.write(script_code)
+    try:
+        result = subprocess.run([sys.executable, script_path], capture_output=True, text=True, encoding="utf-8", timeout=60)
+        if os.path.exists(script_path): os.remove(script_path)
+        if "ERROR_SCRAPER:" in result.stdout: return f"Fehler auf der Seite: {result.stdout}"
+        if not result.stdout.strip(): return "Seite geladen, aber Inhalt leer."
+        return result.stdout.strip()
+    except Exception as e:
+        if os.path.exists(script_path): os.remove(script_path)
+        return f"Systemfehler beim isolierten Aufruf: {str(e)}"
+
+# --- Synchronisationslogik für den Datenabgleich ---
+def perform_data_merge():
+    try:
+        subprocess.run([sys.executable, "downloader.py"], check=True)
+        if os.path.exists(RAW_FILE):
+            df_raw = pd.read_csv(RAW_FILE, sep=';').fillna('')
+            df_raw.columns = df_raw.columns.str.strip()
+            
+            # Bestimmung der Identifier-Spalte
+            if "Identifier" in df_raw.columns:
+                id_col = "Identifier"
+            else:
+                id_col = df_raw.columns[0] # Fallback auf erste Spalte
+                
+            sap_columns = [col for col in df_raw.columns if col != id_col]
+            
+            if os.path.exists(DB_FILE):
+                df_db = pd.read_csv(DB_FILE).fillna('')
+                # Anpassung alter Spaltennamen (Migration)
+                if "Neu hinzugefügt" in df_db.columns:
+                    df_db = df_db.rename(columns={"Neu hinzugefügt": STATUS_COLUMN})
+                    df_db[STATUS_COLUMN] = df_db[STATUS_COLUMN].replace({"🌟 NEU": "🌟 NEW", "🔄 AKTUALISIERT": "🔄 UPDATED", "🌟 NEU (Initial)": "🌟 NEW (Initial)"})
+                if "Änderungshistorie (Auto)" in df_db.columns:
+                    df_db = df_db.rename(columns={"Änderungshistorie (Auto)": HISTORY_COLUMN})
+                if HISTORY_COLUMN not in df_db.columns: df_db[HISTORY_COLUMN] = ""
+                if "Tags" not in df_db.columns: df_db["Tags"] = ""
+                
+                # Abgleich der Identifier bei Migration
+                if id_col not in df_db.columns and id_col == "Identifier":
+                    pass 
+                
+                for index, raw_row in df_raw.iterrows():
+                    use_case_id = raw_row[id_col]
+                    
+                    if id_col in df_db.columns:
+                        db_mask = df_db[id_col] == use_case_id
+                    else:
+                        db_mask = pd.Series([False]*len(df_db))
+                    
+                    if db_mask.any():
+                        db_idx = df_db.index[db_mask].tolist()[0]
+                        is_updated = False
+                        changes_list = []
+                        
+                        for col in sap_columns:
+                            if col in df_db.columns:
+                                val_raw = str(raw_row[col]).replace('nan', '').strip()
+                                val_db = str(df_db.at[db_idx, col]).replace('nan', '').strip()
+                                
+                                if val_raw != val_db:
+                                    old_str = val_db if len(val_db) <= 40 else val_db[:37] + "..."
+                                    new_str = val_raw if len(val_raw) <= 40 else val_raw[:37] + "..."
+                                    if not old_str: old_str = "Leer"
+                                    if not new_str: new_str = "Leer"
+                                    changes_list.append(f"'{col}': '{old_str}' -> '{new_str}'")
+                                    df_db.at[db_idx, col] = raw_row[col]
+                                    is_updated = True
+                        
+                        if is_updated:
+                            if df_db.at[db_idx, STATUS_COLUMN] not in ["🌟 NEW", "🌟 NEW (Initial)"]:
+                                df_db.at[db_idx, STATUS_COLUMN] = "🔄 UPDATED"
+                            date_str = datetime.now().strftime("%d.%m.%Y %H:%M")
+                            new_hist_entry = f"[{date_str}] " + " | ".join(changes_list)
+                            old_hist = str(df_db.at[db_idx, HISTORY_COLUMN]).replace('nan', '').strip()
+                            df_db.at[db_idx, HISTORY_COLUMN] = (new_hist_entry + " || " + old_hist) if old_hist else new_hist_entry
+                    else:
+                        new_row_dict = raw_row.to_dict()
+                        for col in EDITABLE_COLUMNS: new_row_dict[col] = ""
+                        new_row_dict[STATUS_COLUMN] = "🌟 NEW"
+                        new_row_dict[HISTORY_COLUMN] = f"[{datetime.now().strftime('%d.%m.%Y')}] Newly added"
+                        df_db = pd.concat([df_db, pd.DataFrame([new_row_dict])], ignore_index=True)
+                        
+                if "Business Value according to SAP" in df_db.columns:
+                    df_db = df_db.drop(columns=["Business Value according to SAP"])
+                df_db.to_csv(DB_FILE, index=False)
+            else:
+                # Initialisierung der Datenbank falls Datei nicht existiert
+                for col in EDITABLE_COLUMNS: df_raw[col] = ""
+                df_raw[STATUS_COLUMN] = "🌟 NEW (Initial)"
+                df_raw[HISTORY_COLUMN] = ""
+                if "Business Value according to SAP" in df_raw.columns:
+                    df_raw = df_raw.drop(columns=["Business Value according to SAP"])
+                df_raw.to_csv(DB_FILE, index=False)
+                
+        current_config = load_config()
+        current_config["last_sync_time"] = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
+        save_config(current_config)
+        st.session_state.gemini_chat = None 
+        return True
+    except Exception as e:
+        print(f"Sync Fehler: {e}")
+        return False
+
+# --- Ausführung des Hintergrund-Tasks für den Scheduler ---
+def background_task():
+    perform_data_merge()
+
+# --- Management des Hintergrund-Threads für Zeitsteuerung ---
+@st.cache_resource
+def get_scheduler_manager():
+    class SchedulerManager:
+        def __init__(self):
+            self.thread = None
+            self.stop_event = threading.Event()
+        def start(self, time_str):
+            self.stop()
+            self.stop_event.clear()
+            self.thread = threading.Thread(target=self._loop, args=(time_str,), daemon=True)
+            self.thread.start()
+        def stop(self):
+            self.stop_event.set()
+            if self.thread: self.thread.join(timeout=1)
+        def _loop(self, target_time):
+            schedule.clear()
+            schedule.every().day.at(target_time).do(background_task)
+            while not self.stop_event.is_set():
+                schedule.run_pending()
+                time_lib.sleep(10)
+    return SchedulerManager()
+
+scheduler = get_scheduler_manager()
+
+if 'app_initialized' not in st.session_state:
+    if config["scheduler_active"]: scheduler.start(config["scheduled_time"])
+    st.session_state.app_initialized = True
+
+# --- Datenabruf-Funktion ---
+def get_data():
+    if os.path.exists(DB_FILE):
+        df = pd.read_csv(DB_FILE).fillna('')
+        if "Neu hinzugefügt" in df.columns:
+            df = df.rename(columns={"Neu hinzugefügt": STATUS_COLUMN})
+            df[STATUS_COLUMN] = df[STATUS_COLUMN].replace({"🌟 NEU": "🌟 NEW", "🔄 AKTUALISIERT": "🔄 UPDATED", "🌟 NEU (Initial)": "🌟 NEW (Initial)"})
+        if "Änderungshistorie (Auto)" in df.columns:
+            df = df.rename(columns={"Änderungshistorie (Auto)": HISTORY_COLUMN})
+        if "Business Value according to SAP" in df.columns:
+            df = df.drop(columns=["Business Value according to SAP"])
+            
+        if HISTORY_COLUMN not in df.columns: df[HISTORY_COLUMN] = ""
+        if "Tags" not in df.columns: df["Tags"] = ""
+        
+        df["_row_id"] = range(len(df))
+        cols = [c for c in df.columns if c not in [STATUS_COLUMN, "_row_id"]]
+        return df[[STATUS_COLUMN] + cols + ["_row_id"]]
+    return pd.DataFrame()
+
+df = get_data()
+
+# --- Berechnung der Kennzahlen ---
+live_new_count = len(df[df[STATUS_COLUMN].astype(str).str.contains("NEW")]) if not df.empty else 0
+live_upd_count = len(df[df[STATUS_COLUMN].astype(str).str.contains("UPDATED")]) if not df.empty else 0
+
+# --- Definition der Sidebar ---
+with st.sidebar:
+    st.image("https://www.adesso.de/media/general/logo/adesso-logo.svg", width=150)
+    st.write("### 🤖 KI Assistent")
+    show_chat = st.toggle("Gemini Chat einblenden", value=False)
+    api_key = ""
+    
+    if show_chat or not df.empty:
+        if not GEMINI_AVAILABLE: 
+            st.error("Bitte 'google-generativeai' installieren.")
+        else:
+            api_key_input = st.text_input("Dein Gemini API-Key", type="password", placeholder="AIzaSy...")
+            if st.button("🔑 API Key anwenden"):
+                st.success("API Key übernommen!")
+            api_key = api_key_input.strip()
+            if st.button("🗑️ Chat-Gedächtnis löschen"):
+                st.session_state.gemini_chat = None
+                st.rerun()
+    st.write("---")
+    
+    st.write("### 🔄 Manueller Sync")
+    if st.button("Jetzt von SAP laden"):
+        with st.spinner("Prüfe auf neue und aktualisierte Daten..."):
+            if perform_data_merge():
+                config = load_config() 
+                st.rerun()
+    st.write("---")
+
+    st.write("### ⏰ Automatisierung")
+    if config["scheduler_active"]: st.markdown(f'<div class="status-box status-active">● AKTIV ({config["scheduled_time"]} Uhr)</div>', unsafe_allow_html=True)
+    else: st.markdown('<div class="status-box status-inactive">○ INAKTIV</div>', unsafe_allow_html=True)
+
+    sync_time = st.time_input("Uhrzeit:", value=datetime.strptime(config["scheduled_time"], "%H:%M").time())
+    col_btn1, col_btn2 = st.columns(2)
+    with col_btn1:
+        if st.button("Aktivieren"):
+            t_str = sync_time.strftime("%H:%M")
+            config["scheduled_time"] = t_str
+            config["scheduler_active"] = True
+            save_config(config)
+            scheduler.start(t_str)
+            st.rerun()
+    with col_btn2:
+        if st.button("Beenden"):
+            config["scheduler_active"] = False
+            save_config(config)
+            scheduler.stop()
+            st.rerun()
+
+    st.info(f"Letzter Sync: {config['last_sync_time']}")
+    st.write("---")
+
+    if not df.empty:
+        st.write("### 📥 Excel Export")
+        excel_buffer = io.BytesIO()
+        with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+            df.drop(columns=["_row_id"]).to_excel(writer, index=False, sheet_name='SAP AI Use Cases')
+        st.download_button("📊 Gesamte Tabelle als Excel", data=excel_buffer.getvalue(), file_name="adesso_sap_ai.xlsx")
+
+# --- Layout des Hauptbereichs ---
+st.markdown('<div class="adesso-header"><h1>adesso business consulting | SAP AI Manager</h1></div>', unsafe_allow_html=True)
+
+if not df.empty:
+    tab1, tab2 = st.tabs(["🗄️ Portfolio & Datenbank", "🎯 Kunden-Matching (Use Case Finder)"])
+else:
+    tab1, tab2 = st.tabs(["🗄️ Portfolio & Datenbank", "🎯 Kunden-Matching (Use Case Finder)"])
+    with tab1: st.info("Bitte ersten Sync starten.")
+
+if show_chat and GEMINI_AVAILABLE: 
+    col_main, col_chat = st.columns([3, 1.5]) 
+else: 
+    col_main = st.columns([1])[0] 
+
+with col_main:
+    if not df.empty:
+        # --- Inhalt Reiter 1: Portfolio-Datenbank ---
+        with tab1:
+            with st.expander("📊 Management Dashboard einblenden", expanded=False):
+                st.write("### adesso Portfolio Auswertung")
+                dash_col1, dash_col2, dash_col3 = st.columns(3)
+                with dash_col1:
+                    st.write("**adesso Business Value (1-5)**")
+                    bv_data = df["Business Value according to Adesso"].replace('', 'Nicht bewertet').astype(str).value_counts().sort_index()
+                    st.bar_chart(bv_data)
+                with dash_col2:
+                    st.write("**Sales Pitch Usability (1-5)**")
+                    sp_data = df["Useability for Sales Pitches"].replace('', 'Nicht bewertet').astype(str).value_counts().sort_index()
+                    st.bar_chart(sp_data)
+                with dash_col3:
+                    st.write("**adesso Priorität (1-5)**")
+                    prio_data = df["Priority"].replace('', 'Nicht bewertet').astype(str).value_counts().sort_index()
+                    st.bar_chart(prio_data)
+
+            # --- Extraktion und Aufbereitung der Tags ---
+            all_tags = []
+            for tags_str in df["Tags"].astype(str):
+                if tags_str.lower() != "nan" and tags_str.strip() != "":
+                    tags = [t.strip() for t in tags_str.split(",") if t.strip()]
+                    all_tags.extend(tags)
+            unique_tags = sorted(list(set(all_tags)))
+
+            # --- Definition der Such- und Filterleiste ---
+            col_search1, col_search2, col_c1, col_c2, col_c3 = st.columns([1.5, 1.5, 0.5, 0.5, 0.5])
+            with col_search1: 
+                search_query = st.text_input("🔍 Suche (Freitext):", placeholder="Use Case finden...")
+            with col_search2:
+                selected_tags = st.multiselect("🏷️ Themen-Filter (Tags):", unique_tags, placeholder="Wähle Tags (z.B. #HR)...")
+                
+            with col_c1: st.markdown(f'<div class="counter-box"><div class="counter-val">{len(df)}</div><div class="counter-label">Gesamt</div></div>', unsafe_allow_html=True)
+            with col_c2: st.markdown(f'<div class="counter-box"><div class="counter-val" style="color: #28a745;">+{live_new_count}</div><div class="counter-label">Neu</div></div>', unsafe_allow_html=True)
+            with col_c3: st.markdown(f'<div class="counter-box"><div class="counter-val" style="color: #fd7e14;">~{live_upd_count}</div><div class="counter-label">Updates</div></div>', unsafe_allow_html=True)
+
+            st.write("---")
+
+            filter_opt = st.radio("Schnellfilter:", ["Alle anzeigen", "🌟 Nur Neue", "🔄 Nur Aktualisierte"], horizontal=True)
+            
+            display_df = df.copy()
+            if filter_opt == "🌟 Nur Neue": display_df = df[df[STATUS_COLUMN].astype(str).str.contains("NEW")]
+            elif filter_opt == "🔄 Nur Aktualisierte": display_df = df[df[STATUS_COLUMN] == "🔄 UPDATED"]
+            
+            if selected_tags:
+                pattern = '|'.join([re.escape(t) for t in selected_tags])
+                display_df = display_df[display_df["Tags"].astype(str).str.contains(pattern, case=False, na=False)]
+
+            # --- Konfiguration der Grid-Optionen ---
+            gb = GridOptionsBuilder.from_dataframe(display_df)
+            gb.configure_default_column(editable=False, filter=True, sortable=True, resizable=True, wrapText=True, autoHeight=True, minWidth=200)
+            
+            gb.configure_selection('single', use_checkbox=False) 
+
+            dropdown_columns = ["Business Value according to Adesso", "Priority", "Useability for Sales Pitches"]
+
+            for col in EDITABLE_COLUMNS: 
+                if col in display_df.columns: 
+                    if col in dropdown_columns:
+                        gb.configure_column(col, editable=True, minWidth=200, cellEditor='agSelectCellEditor', cellEditorParams={'values': ['', '1', '2', '3', '4', '5']})
+                    else:
+                        gb.configure_column(col, editable=True, minWidth=300)
+                    
+            if STATUS_COLUMN in display_df.columns: gb.configure_column(STATUS_COLUMN, editable=False, minWidth=140)
+            if HISTORY_COLUMN in display_df.columns: gb.configure_column(HISTORY_COLUMN, editable=False, minWidth=400)
+            gb.configure_column("_row_id", hide=True)
+            
+            # Identifikation der Namensspalte des Use Cases
+            uc_name_col = None
+            for col in display_df.columns:
+                if "name" in col.lower():
+                    uc_name_col = col
+                    break
+            
+            if not uc_name_col and len(display_df.columns) > 1:
+                 uc_name_col = display_df.columns[1] if display_df.columns[0] == "Identifier" else display_df.columns[0]
+            
+            detail_col = next((c for c in display_df.columns if "detail" in c.lower() or "link" in c.lower()), None)
+            if detail_col:
+                gb.configure_column(detail_col, cellRenderer=JsCode('''
+                    function(params) {
+                        if (params.value) {
+                            var url = String(params.value).trim();
+                            if (url.length > 0) {
+                                if (!url.startsWith('http')) { url = 'https://' + url; }
+                                return '<a href="' + url + '" target="_blank" onclick="event.stopPropagation();" style="color: #006EC7;">' + url + '</a>';
+                            }
+                        } return '';
+                    }
+                '''), minWidth=300)
+
+            gridOptions = gb.build()
+            if search_query: gridOptions['quickFilterText'] = search_query
+
+            # Fixierung der Auswahl- und Namensspalte
+            gridOptions['columnDefs'].insert(0, {
+                'headerName': '✔',
+                'checkboxSelection': True,
+                'pinned': 'left', 
+                'width': 60,
+                'minWidth': 60,
+                'maxWidth': 60,
+                'suppressMenu': True,
+                'sortable': False,
+                'filter': False
+            })
+            
+            if uc_name_col:
+                for col in gridOptions['columnDefs']:
+                    if col.get('field') == uc_name_col:
+                        col['pinned'] = 'left' 
+                        col['minWidth'] = 300
+                        break
+
+            custom_css = {
+                ".ag-header": {"background-color": "#006EC7 !important"},
+                ".ag-header-cell-text": {"color": "white !important", "font-weight": "bold !important"},
+                ".ag-icon": {"color": "white !important"}
+            }
+
+            grid_response = AgGrid(display_df, gridOptions=gridOptions, height=800, update_mode=GridUpdateMode.MODEL_CHANGED | GridUpdateMode.SELECTION_CHANGED, data_return_mode=DataReturnMode.FILTERED_AND_SORTED, fit_columns_on_grid_load=False, allow_unsafe_jscode=True, theme='alpine', custom_css=custom_css)
+
+            # --- Steuerungselemente für Speicherung und KI-Verarbeitung ---
+            col_btn_save, col_btn_score, col_btn_tag = st.columns([1, 1.5, 1.5])
+            with col_btn_save:
+                if st.button("💾 adesso-Bewertung speichern"):
+                    res_df = pd.DataFrame(grid_response['data'])
+                    if not res_df.empty:
+                        full_df = df.copy().set_index("_row_id")
+                        updated_indexed = res_df.set_index("_row_id")
+                        full_df.update(updated_indexed)
+                        full_df.reset_index(inplace=True)
+                        full_df.drop(columns=["_row_id"]).to_csv(DB_FILE, index=False)
+                        st.session_state.gemini_chat = None 
+                        st.toast("✅ Gespeichert! Dashboard wird aktualisiert...", icon="🔄")
+                        time_lib.sleep(0.5) 
+                        st.rerun()
+                        
+            with col_btn_score:
+                if st.button("🤖 Vorabbewertung für 'Neue' Fälle"):
+                    if not api_key:
+                        st.error("Bitte API-Key eingeben!")
+                    else:
+                        new_cases_df = df[df[STATUS_COLUMN].astype(str).str.contains("NEW")]
+                        if new_cases_df.empty:
+                            st.info("Keine neuen Use Cases gefunden.")
+                        else:
+                            st.info(f"Starte KI-Bewertung für {len(new_cases_df)} Use Cases. Bitte warten...")
+                            genai.configure(api_key=api_key)
+                            model = genai.GenerativeModel('gemini-2.5-flash')
+                            progress_bar = st.progress(0)
+                            updates_made = 0
+                            full_df = df.copy()
+                            
+                            for i, (idx, row) in enumerate(new_cases_df.iterrows()):
+                                prompt = f"""Bewerte diesen SAP Use Case für adesso. Daten: {row.to_json()}
+                                Gib EXAKT ein JSON zurück mit folgenden Schlüsseln (Werte als Strings '1'-'5', Tags kommasepariert mit #):
+                                {{"Business Value according to Adesso": "3", "Priority": "2", "Useability for Sales Pitches": "4", "Restrictions of the use case": "kurze Hürden", "Tags": "#HR, #BTP"}}"""
+                                try:
+                                    response = model.generate_content(prompt)
+                                    response_text = response.text.replace('```json', '').replace('```', '').strip()
+                                    scoring = json.loads(response_text)
+                                    full_df.at[idx, "Business Value according to Adesso"] = scoring.get("Business Value according to Adesso", "")
+                                    full_df.at[idx, "Priority"] = scoring.get("Priority", "")
+                                    full_df.at[idx, "Useability for Sales Pitches"] = scoring.get("Useability for Sales Pitches", "")
+                                    full_df.at[idx, "Restrictions of the use case"] = scoring.get("Restrictions of the use case", "")
+                                    full_df.at[idx, "Tags"] = scoring.get("Tags", "")
+                                    updates_made += 1
+                                except Exception as e: print(f"Fehler: {e}")
+                                progress_bar.progress((i + 1) / len(new_cases_df))
+                                time_lib.sleep(1) 
+                            full_df.drop(columns=["_row_id"]).to_csv(DB_FILE, index=False)
+                            st.success(f"✅ {updates_made} Use Cases bewertet!")
+                            time_lib.sleep(1.5)
+                            st.rerun()
+                            
+            with col_btn_tag:
+                if st.button("🏷️ Fehlende Tags generieren (Reparatur)"):
+                    if not api_key:
+                        st.error("Bitte API-Key eingeben!")
+                    else:
+                        untagged_mask = df["Tags"].isna() | (df["Tags"].astype(str).str.strip() == "") | (df["Tags"].astype(str).str.lower() == "nan")
+                        untagged_df = df[untagged_mask]
+                        
+                        if untagged_df.empty:
+                            st.info("Alle Use Cases haben bereits Tags! (Keine leeren Felder gefunden)")
+                        else:
+                            st.info(f"Generiere Tags für {len(untagged_df)} Use Cases. Das kann dauern...")
+                            genai.configure(api_key=api_key)
+                            model = genai.GenerativeModel('gemini-2.5-flash')
+                            progress_bar = st.progress(0)
+                            full_df = df.copy()
+                            for i, (idx, row) in enumerate(untagged_df.iterrows()):
+                                prompt = f"Nenne 2-3 passende SAP/IT-Hashtags (z.B. #HR, #S4HANA, #Finance) für diesen SAP Use Case: {row.to_json()}. Antworte NUR mit den kommaseparierten Tags."
+                                try:
+                                    response = model.generate_content(prompt)
+                                    full_df.at[idx, "Tags"] = response.text.strip()
+                                except: pass
+                                progress_bar.progress((i + 1) / len(untagged_df))
+                                time_lib.sleep(0.5) 
+                            
+                            full_df.drop(columns=["_row_id"]).to_csv(DB_FILE, index=False)
+                            st.success("✅ Tags erfolgreich generiert!")
+                            time_lib.sleep(1.5)
+                            st.rerun()
+
+            # --- Berater-Toolbox für selektierte Zeilen ---
+            selected_rows = grid_response['selected_rows']
+            if selected_rows is not None and len(selected_rows) > 0:
+                st.write("---")
+                row_data = selected_rows[0] if isinstance(selected_rows, list) else selected_rows.iloc[0].to_dict()
+                use_case_name = row_data.get(uc_name_col, "Ausgewählter Use Case") if uc_name_col else "Use Case"
+                link_to_scrape = row_data.get(detail_col, "") if detail_col else ""
+                
+                st.write(f"### 🛠️ Berater-Toolbox: *{use_case_name}*")
+                
+                # Definition der Toolbox-Tabs
+                uc_tab1, uc_tab2, uc_tab3 = st.tabs(["📄 Pitch & E-Mail Generator", "🛡️ Objection Handling (Q&A)", "👕 Tech-Stack & Aufwand"])
+                
+                # --- Tab 1: Dokumentengenerierung ---
+                with uc_tab1:
+                    st.info("Generiere zielgruppenspezifische Pitches oder schreibe direkt Kaltakquise-Mails.")
+                    col_opt1, col_opt2 = st.columns(2)
+                    with col_opt1: pitch_language = st.selectbox("🗣️ Sprache:", ["Deutsch", "English", "Español", "Français"])
+                    with col_opt2: pitch_persona = st.selectbox("🎯 Zielgruppe (Persona):", ["Allgemein (C-Level)", "CIO / IT-Leiter", "CFO / Finanzleiter", "Fachbereichsleiter (Business)"])
+                    
+                    c_b1, c_b2, c_b3 = st.columns(3)
+                    with c_b1:
+                        if st.button("✨ AI Sales Pitch"):
+                            if not api_key: st.error("API Key fehlt!")
+                            else:
+                                with st.spinner(f"Generiere Pitch für {pitch_persona} auf {pitch_language}..."):
+                                    genai.configure(api_key=api_key)
+                                    model = genai.GenerativeModel('gemini-2.5-flash', tools=[lese_sap_detail_seite])
+                                    prompt = f"""Du bist ein Top-Vertriebler bei adesso. Erstelle einen One-Pager Sales Pitch für diesen SAP AI Use Case.
+                                    SPRACHE: {pitch_language} | ZIELGRUPPE/PERSONA: {pitch_persona} (Passe die Argumente strikt an diese Zielgruppe an!)
+                                    Daten: {json.dumps(row_data, indent=2, ensure_ascii=False)}
+                                    WICHTIG: Rufe ZWINGEND das Werkzeug 'lese_sap_detail_seite' auf, falls ein Link existiert ({link_to_scrape}).
+                                    Struktur: 1. Catchy Überschrift 2. Pain Point der Persona 3. Lösung 4. adesso Business Value"""
+                                    try:
+                                        t_chat = model.start_chat(enable_automatic_function_calling=True)
+                                        st.session_state.generated_pitch = t_chat.send_message(prompt).text
+                                    except Exception as e: st.error(f"Fehler: {e}")
+                    with c_b2:
+                        if st.button("✉️ AI E-Mail (Kaltakquise)"):
+                            if not api_key: st.error("API Key fehlt!")
+                            else:
+                                with st.spinner("Schreibe E-Mail..."):
+                                    genai.configure(api_key=api_key)
+                                    model = genai.GenerativeModel('gemini-2.5-flash', tools=[lese_sap_detail_seite])
+                                    prompt = f"""Schreibe eine kurze, knackige B2B Kaltakquise E-Mail zu diesem SAP AI Use Case. 
+                                    SPRACHE: {pitch_language} | EMPFÄNGER PERSONA: {pitch_persona}. 
+                                    Daten: {json.dumps(row_data)}
+                                    Nutze das Web-Werkzeug für Details falls ein Link existiert. Ziel: Einen 15-minütigen Teams-Call vereinbaren. Kein Bullshit-Bingo."""
+                                    try:
+                                        t_chat = model.start_chat(enable_automatic_function_calling=True)
+                                        st.session_state.generated_email = t_chat.send_message(prompt).text
+                                    except Exception as e: st.error(f"Fehler: {e}")
+                    with c_b3:
+                        if st.button("🗑️ Ausgabe leeren"):
+                            st.session_state.generated_pitch = ""
+                            st.session_state.generated_email = ""
+                            st.rerun()
+
+                    if st.session_state.generated_pitch:
+                        st.markdown('<div class="toolbox-box">', unsafe_allow_html=True)
+                        st.markdown(st.session_state.generated_pitch)
+                        
+                        st.write("---")
+                        col_e1, col_e2, col_e3, _ = st.columns([1,1,1,2])
+                        with col_e1: st.download_button("Als .txt", data=st.session_state.generated_pitch, file_name="pitch.txt")
+                        with col_e2: 
+                            if PPTX_AVAILABLE:
+                                try:
+                                    prs = Presentation()
+                                    slide = prs.slides.add_slide(prs.slide_layouts[1]) 
+                                    slide.shapes.title.text = f"adesso Pitch: {use_case_name}"
+                                    clean_text = re.sub(r'\*\*(.*?)\*\*', r'\1', st.session_state.generated_pitch)
+                                    clean_text = re.sub(r'### (.*)', r'\1', clean_text)
+                                    slide.placeholders[1].text = clean_text
+                                    pptx_buffer = io.BytesIO()
+                                    prs.save(pptx_buffer)
+                                    pptx_buffer.seek(0)
+                                    st.download_button("Als .pptx", data=pptx_buffer, file_name="pitch.pptx")
+                                except: pass
+                        with col_e3:
+                            if PDF_AVAILABLE:
+                                try:
+                                    pdf = FPDF()
+                                    pdf.add_page()
+                                    pdf.set_font("Helvetica", size=11)
+                                    clean_text = st.session_state.generated_pitch.encode('latin-1', 'ignore').decode('latin-1')
+                                    clean_text = re.sub(r'\*\*(.*?)\*\*', r'\1', clean_text)
+                                    pdf.multi_cell(0, 7, txt=clean_text)
+                                    pdf_bytes = pdf.output(dest='S').encode('latin-1')
+                                    st.download_button("Als .pdf", data=pdf_bytes, file_name="pitch.pdf")
+                                except: pass
+                        st.markdown('</div>', unsafe_allow_html=True)
+
+                    if st.session_state.generated_email:
+                        st.markdown('<div class="toolbox-box">', unsafe_allow_html=True)
+                        st.write("**Deine generierte E-Mail:**")
+                        st.markdown(st.session_state.generated_email)
+                        
+                        enc_sub = urllib.parse.quote(f"SAP AI Potenzial: {use_case_name}")
+                        enc_body = urllib.parse.quote(st.session_state.generated_email)
+                        mailto_link = f"mailto:?subject={enc_sub}&body={enc_body}"
+                        st.markdown(f'<a href="{mailto_link}" class="outlook-btn">📧 Direkt in Outlook öffnen</a>', unsafe_allow_html=True)
+                        st.markdown('</div>', unsafe_allow_html=True)
+
+                # --- Tab 2: Einwandbehandlung ---
+                with uc_tab2:
+                    st.info("Bereite dich auf harte Kundenfragen vor. Die KI simuliert den Kunden und liefert dir adesso-konforme Antworten.")
+                    if st.button("🛡️ Objection Handling generieren"):
+                        if not api_key: st.error("API Key fehlt!")
+                        else:
+                            with st.spinner("Analysiere Schwachstellen und generiere Q&A..."):
+                                genai.configure(api_key=api_key)
+                                model = genai.GenerativeModel('gemini-2.5-flash', tools=[lese_sap_detail_seite])
+                                prompt = f"""Du bist ein kritischer Kunde, der diesen SAP AI Use Case kaufen soll. Generiere die 3 kritischsten Einwände/Fragen (z.B. Kosten, DSGVO, Architektur). 
+                                Beantworte diese dann souverän aus der Sicht eines erfahrenen adesso-Beraters.
+                                Daten: {json.dumps(row_data)} | Werkzeug für Details: {link_to_scrape}. Nutze Markdown."""
+                                try:
+                                    t_chat = model.start_chat(enable_automatic_function_calling=True)
+                                    st.session_state.generated_objection = t_chat.send_message(prompt).text
+                                except Exception as e: st.error(f"Fehler: {e}")
+                    if st.session_state.generated_objection:
+                        st.markdown('<div class="toolbox-box">', unsafe_allow_html=True)
+                        st.markdown(st.session_state.generated_objection)
+                        st.markdown('</div>', unsafe_allow_html=True)
+
+                # --- Tab 3: Technische Analyse und Schätzung ---
+                with uc_tab3:
+                    st.info("Schnelle Ersteinschätzung zu benötigter SAP Architektur, Skillsets und Projektlaufzeit.")
+                    
+                    st.write("**⚙️ Definiere deine T-Shirt Sizes (in Personentagen):**")
+                    col_t1, col_t2, col_t3 = st.columns(3)
+                    with col_t1: max_s = st.number_input("Max. PT für Size 'S':", min_value=1, value=10)
+                    with col_t2: max_m = st.number_input("Max. PT für Size 'M':", min_value=int(max_s)+1, value=30)
+                    with col_t3: st.info(f"Size 'L' ist dann alles > {max_m} PT")
+                    
+                    if st.button("👕 Tech-Stack & Aufwand analysieren"):
+                        if not api_key: st.error("API Key fehlt!")
+                        else:
+                            with st.spinner("Analysiere Architektur und berechne Aufwand..."):
+                                genai.configure(api_key=api_key)
+                                model = genai.GenerativeModel('gemini-2.5-flash', tools=[lese_sap_detail_seite])
+                                prompt = f"""Analysiere als technischer SAP Architekt diesen Use Case: {json.dumps(row_data)}. Werkzeug für Details: {link_to_scrape}.
+                                Erstelle eine kurze Übersicht:
+                                1. Benötigter SAP Tech-Stack (z.B. S/4HANA, BTP, AI Core)
+                                2. Benötigte Berater-Skills bei adesso
+                                3. T-Shirt Sizing der Implementierung inkl. grober PT-Schätzung. 
+                                
+                                NUTZE ZWINGEND DIESE SKALA FÜR DAS SIZING:
+                                - S: 1 bis {max_s} Personentage (PT)
+                                - M: {int(max_s) + 1} bis {max_m} PT
+                                - L: mehr als {max_m} PT
+                                
+                                Nutze Markdown."""
+                                try:
+                                    t_chat = model.start_chat(enable_automatic_function_calling=True)
+                                    st.session_state.generated_tech = t_chat.send_message(prompt).text
+                                except Exception as e: st.error(f"Fehler: {e}")
+                    if st.session_state.generated_tech:
+                        st.markdown('<div class="toolbox-box">', unsafe_allow_html=True)
+                        st.markdown(st.session_state.generated_tech)
+                        st.markdown('</div>', unsafe_allow_html=True)
+
+        # --- Reiter 2: Logik für den Use Case Finder ---
+        with tab2:
+            st.write("### 🎯 Use Case Finder (Kunden-Matching)")
+            st.write("Beschreibe deinen Kunden. Die KI durchsucht euer Portfolio und schlägt die passendsten Use Cases vor.")
+            
+            client_profile = st.text_area("Kundenprofil / Pain Points:", placeholder="z.B. Ein mittelständischer Maschinenbauer mit SAP S/4HANA...", height=150)
+            
+            if st.button("🔍 Passende Use Cases im Portfolio suchen"):
+                if not api_key:
+                    st.error("Bitte gib links deinen Gemini API-Key ein!")
+                elif not client_profile.strip():
+                    st.warning("Bitte gib ein Kundenprofil ein.")
+                else:
+                    with st.spinner("Durchsuche das Portfolio und analysiere den Match..."):
+                        genai.configure(api_key=api_key)
+                        model = genai.GenerativeModel('gemini-2.5-flash')
+                        summary_df = df.drop(columns=["_row_id", HISTORY_COLUMN], errors='ignore').head(200)
+                        db_context = summary_df.to_csv(index=False, sep=';')
+                        prompt = f"""Du bist ein Presales-Consultant bei adesso. Kundenprofil: "{client_profile}"
+                        Hier ist unser Portfolio (Tabelle): {db_context}
+                        Finde die Top 3 passenden Use Cases und erkläre in Bulletpoints, WARUM sie passen. Nutze Markdown."""
+                        try:
+                            st.markdown('<div class="toolbox-box">', unsafe_allow_html=True)
+                            st.markdown(model.generate_content(prompt).text)
+                            st.markdown('</div>', unsafe_allow_html=True)
+                        except Exception as e: st.error(f"Fehler: {e}")
+    else:
+        st.info("Bitte ersten Sync starten.")
+
+# --- KI Chatbereich in der rechten Spalte ---
+if show_chat and GEMINI_AVAILABLE:
+    with col_chat:
+        st.markdown('<div class="chat-container">', unsafe_allow_html=True)
+        st.write("### 🤖 Gemini Assistent")
+        if not api_key:
+            st.warning("Bitte gib links deinen API-Key ein.")
+        else:
+            try:
+                genai.configure(api_key=api_key)
+                if st.session_state.gemini_chat is None:
+                    table_context = ""
+                    if not df.empty:
+                        export_df = df.drop(columns=["_row_id"], errors='ignore')
+                        table_context = export_df.to_csv(index=False, sep=';')
+                    
+                    system_instruction = (
+                        "Du bist ein hochintelligenter Berater-Assistent für adesso business consulting. "
+                        "Deine Aufgabe ist es, Fragen zur folgenden SAP AI Use Case Datenbank zu beantworten.\n\n"
+                        "WICHTIG: Wenn der Nutzer nach Details fragt, MUSS du das Werkzeug 'lese_sap_detail_seite' aufrufen!\n\n"
+                        f"--- AKTUELLE DATENBANK ---\n{table_context}"
+                    )
+                    
+                    model = genai.GenerativeModel('gemini-2.5-flash', system_instruction=system_instruction, tools=[lese_sap_detail_seite])
+                    st.session_state.gemini_chat = model.start_chat(history=[], enable_automatic_function_calling=True)
+                
+                for msg in st.session_state.gemini_chat.history:
+                    if msg.role in ["user", "model"]:
+                        if msg.parts and msg.parts[0].text:
+                            with st.chat_message(msg.role): st.markdown(msg.parts[0].text)
+                
+                if prompt := st.chat_input("Frag mich etwas..."):
+                    with st.chat_message("user"): st.markdown(prompt)
+                    with st.chat_message("assistant"):
+                        with st.spinner("Denke nach..."):
+                            try:
+                                response = st.session_state.gemini_chat.send_message(prompt)
+                                st.markdown(response.text)
+                            except Exception as e: st.error(f"API Fehler: {e}")
+            except Exception as e:
+                st.error(f"Fehler: {e}")
+        st.markdown('</div>', unsafe_allow_html=True)

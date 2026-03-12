@@ -520,3 +520,58 @@ export function getPriorityInfo(priority, language = 'de') {
   };
   return priorities[priority]?.[language] || priorities.medium[language];
 }
+
+/**
+ * Generic AI call function for use by other services
+ * Calls the adesso AI Hub via Supabase Edge Function
+ */
+export async function callAI(messages, options = {}) {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    
+    const response = await fetch(AI_CONFIG.edgeFunctionUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(session?.access_token && {
+          'Authorization': `Bearer ${session.access_token}`,
+        }),
+      },
+      body: JSON.stringify({
+        model: options.model || AI_CONFIG.model,
+        messages,
+        max_tokens: options.max_tokens || AI_CONFIG.maxTokens,
+        temperature: options.temperature ?? AI_CONFIG.temperature,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      return {
+        success: false,
+        error: `AI Service Error: ${response.status} - ${errorData.message || errorData.error || 'Unknown error'}`,
+      };
+    }
+
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content;
+
+    if (!content) {
+      return {
+        success: false,
+        error: 'No response content from AI',
+      };
+    }
+
+    return {
+      success: true,
+      content,
+    };
+  } catch (error) {
+    console.error('Error calling AI:', error);
+    return {
+      success: false,
+      error: error.message,
+    };
+  }
+}

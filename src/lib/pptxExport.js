@@ -213,9 +213,38 @@ Output ONLY valid JSON with same structure as German version.`;
     if (!response.ok) throw new Error(`AI Service Error: ${response.status}`);
     const data = await response.json();
     const content = data.choices?.[0]?.message?.content;
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    if (jsonMatch) return JSON.parse(jsonMatch[0]);
-    throw new Error('No JSON found');
+    
+    // Try to extract JSON from the response
+    let aiContent = null;
+    if (content) {
+      // Try multiple JSON extraction methods
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        try {
+          aiContent = JSON.parse(jsonMatch[0]);
+        } catch (parseError) {
+          console.warn('JSON parse failed, trying to clean:', parseError);
+          // Try to clean common JSON issues
+          let cleaned = jsonMatch[0]
+            .replace(/,\s*}/g, '}')  // Remove trailing commas
+            .replace(/,\s*]/g, ']')  // Remove trailing commas in arrays
+            .replace(/[\x00-\x1F\x7F]/g, ' '); // Remove control characters
+          try {
+            aiContent = JSON.parse(cleaned);
+          } catch (e) {
+            console.warn('Cleaned JSON parse also failed');
+          }
+        }
+      }
+    }
+    
+    // If we got AI content, merge it with fallback to ensure completeness
+    if (aiContent) {
+      const fallback = getFallbackContent(scores, industry, language, customerName);
+      return deepMergeWithFallback(aiContent, fallback);
+    }
+    
+    throw new Error('No valid JSON found in AI response');
   } catch (error) {
     console.error('AI error:', error);
     return getFallbackContent(scores, industry, language, customerName);
@@ -280,6 +309,159 @@ function getFallbackContent(scores, industry, language, customerName) {
       { step: isDE ? 'Technische Evaluierung' : 'Technical Evaluation', timeline: isDE ? 'Woche 2-3' : 'Week 2-3', owner: 'adesso', deliverable: isDE ? 'Architektur-Blueprint' : 'Architecture blueprint' },
     ],
   };
+}
+
+/**
+ * Deep merge AI content with fallback to ensure all required fields exist
+ * AI content takes priority, but missing fields are filled from fallback
+ */
+function deepMergeWithFallback(aiContent, fallback) {
+  const result = { ...fallback };
+  
+  // Simple string fields - use AI if present and non-empty
+  if (aiContent.keyMessage && aiContent.keyMessage.trim()) {
+    result.keyMessage = aiContent.keyMessage;
+  }
+  
+  // Executive Summary
+  if (aiContent.executiveSummary) {
+    result.executiveSummary = {
+      headline: aiContent.executiveSummary.headline || fallback.executiveSummary.headline,
+      supportingPoints: Array.isArray(aiContent.executiveSummary.supportingPoints) && aiContent.executiveSummary.supportingPoints.length > 0
+        ? aiContent.executiveSummary.supportingPoints
+        : fallback.executiveSummary.supportingPoints,
+      bottomLine: aiContent.executiveSummary.bottomLine || fallback.executiveSummary.bottomLine,
+    };
+  }
+  
+  // Situation Analysis
+  if (aiContent.situationAnalysis) {
+    result.situationAnalysis = {
+      currentState: Array.isArray(aiContent.situationAnalysis.currentState) && aiContent.situationAnalysis.currentState.length > 0
+        ? aiContent.situationAnalysis.currentState.map((item, i) => ({
+            dimension: item.dimension || fallback.situationAnalysis.currentState[i]?.dimension || `Dimension ${i + 1}`,
+            finding: item.finding || fallback.situationAnalysis.currentState[i]?.finding || '',
+            score: typeof item.score === 'number' ? item.score : (fallback.situationAnalysis.currentState[i]?.score || 0),
+            benchmark: typeof item.benchmark === 'number' ? item.benchmark : (fallback.situationAnalysis.currentState[i]?.benchmark || 50),
+            gap: typeof item.gap === 'number' ? item.gap : (fallback.situationAnalysis.currentState[i]?.gap || 0),
+            implication: item.implication || fallback.situationAnalysis.currentState[i]?.implication || '',
+          }))
+        : fallback.situationAnalysis.currentState,
+      strengthsWeaknesses: {
+        strengths: Array.isArray(aiContent.situationAnalysis.strengthsWeaknesses?.strengths) && aiContent.situationAnalysis.strengthsWeaknesses.strengths.length > 0
+          ? aiContent.situationAnalysis.strengthsWeaknesses.strengths
+          : fallback.situationAnalysis.strengthsWeaknesses.strengths,
+        weaknesses: Array.isArray(aiContent.situationAnalysis.strengthsWeaknesses?.weaknesses) && aiContent.situationAnalysis.strengthsWeaknesses.weaknesses.length > 0
+          ? aiContent.situationAnalysis.strengthsWeaknesses.weaknesses
+          : fallback.situationAnalysis.strengthsWeaknesses.weaknesses,
+      },
+    };
+  }
+  
+  // Gap Analysis
+  if (aiContent.gapAnalysis) {
+    result.gapAnalysis = {
+      matrix: Array.isArray(aiContent.gapAnalysis.matrix) && aiContent.gapAnalysis.matrix.length > 0
+        ? aiContent.gapAnalysis.matrix.map((item, i) => ({
+            gap: item.gap || `Gap ${i + 1}`,
+            impact: item.impact || 'medium',
+            effort: item.effort || 'medium',
+            priority: typeof item.priority === 'number' ? item.priority : (i + 1),
+            action: item.action || '',
+            timeline: item.timeline || '',
+          }))
+        : fallback.gapAnalysis.matrix,
+      riskAssessment: Array.isArray(aiContent.gapAnalysis.riskAssessment) && aiContent.gapAnalysis.riskAssessment.length > 0
+        ? aiContent.gapAnalysis.riskAssessment.map((item, i) => ({
+            risk: item.risk || `Risk ${i + 1}`,
+            probability: item.probability || 'medium',
+            impact: item.impact || 'medium',
+            mitigation: item.mitigation || '',
+          }))
+        : fallback.gapAnalysis.riskAssessment,
+      opportunityCost: aiContent.gapAnalysis.opportunityCost || fallback.gapAnalysis.opportunityCost,
+    };
+  }
+  
+  // Industry Use Cases
+  if (Array.isArray(aiContent.industryUseCases) && aiContent.industryUseCases.length > 0) {
+    result.industryUseCases = aiContent.industryUseCases.map((item, i) => ({
+      useCase: item.useCase || `Use Case ${i + 1}`,
+      description: item.description || '',
+      sapProduct: item.sapProduct || 'SAP',
+      benefit: item.benefit || '',
+      complexity: item.complexity || 'medium',
+      timeline: item.timeline || '',
+    }));
+  }
+  
+  // Recommendations
+  if (aiContent.recommendations) {
+    const mapRec = (item, i) => ({
+      action: item.action || `Action ${i + 1}`,
+      rationale: item.rationale || '',
+      investment: item.investment || '',
+      roi: item.roi || '',
+      timeline: item.timeline || '',
+      owner: item.owner || '',
+    });
+    
+    result.recommendations = {
+      mustHave: Array.isArray(aiContent.recommendations.mustHave) && aiContent.recommendations.mustHave.length > 0
+        ? aiContent.recommendations.mustHave.map(mapRec)
+        : fallback.recommendations.mustHave,
+      shouldHave: Array.isArray(aiContent.recommendations.shouldHave) && aiContent.recommendations.shouldHave.length > 0
+        ? aiContent.recommendations.shouldHave.map(mapRec)
+        : fallback.recommendations.shouldHave,
+      couldHave: Array.isArray(aiContent.recommendations.couldHave) && aiContent.recommendations.couldHave.length > 0
+        ? aiContent.recommendations.couldHave.map(mapRec)
+        : fallback.recommendations.couldHave,
+    };
+  }
+  
+  // Roadmap
+  if (aiContent.roadmap && Array.isArray(aiContent.roadmap.phases) && aiContent.roadmap.phases.length > 0) {
+    result.roadmap = {
+      phases: aiContent.roadmap.phases.map((phase, i) => ({
+        name: phase.name || `Phase ${i + 1}`,
+        duration: phase.duration || '',
+        focus: phase.focus || '',
+        milestones: Array.isArray(phase.milestones) && phase.milestones.length > 0
+          ? phase.milestones
+          : ['Milestone 1', 'Milestone 2'],
+        investment: phase.investment || '',
+      })),
+    };
+  }
+  
+  // Business Case
+  if (aiContent.businessCase) {
+    result.businessCase = {
+      totalInvestment: aiContent.businessCase.totalInvestment || fallback.businessCase.totalInvestment,
+      expectedBenefits: aiContent.businessCase.expectedBenefits || fallback.businessCase.expectedBenefits,
+      roi: aiContent.businessCase.roi || fallback.businessCase.roi,
+      paybackPeriod: aiContent.businessCase.paybackPeriod || fallback.businessCase.paybackPeriod,
+      riskOfInaction: aiContent.businessCase.riskOfInaction || fallback.businessCase.riskOfInaction,
+      competitiveImplication: aiContent.businessCase.competitiveImplication || fallback.businessCase.competitiveImplication,
+    };
+  }
+  
+  // Value Proposition
+  if (Array.isArray(aiContent.valueProposition) && aiContent.valueProposition.length > 0) {
+    result.valueProposition = aiContent.valueProposition;
+  }
+  
+  // Next Steps
+  if (Array.isArray(aiContent.nextSteps) && aiContent.nextSteps.length > 0) {
+    result.nextSteps = aiContent.nextSteps.map((step, i) => ({
+      step: step.step || `Step ${i + 1}`,
+      timeline: step.timeline || '',
+      owner: step.owner || '',
+      deliverable: step.deliverable || '',
+    }));
+  }
+  
+  return result;
 }
 
 // VISUAL HELPER FUNCTIONS
@@ -414,26 +596,91 @@ export async function generatePowerPoint(assessment, answers, language = 'de', o
     }
     updateProgress(2, 23);
     
+    // Get fallback content first - we'll use it to fill any gaps
+    const fallbackContent = getFallbackContent(scores, industry, language, customerName);
+    
     let ai;
     try {
       ai = await generateAIContent(assessment, answers, scores, industry, language, sapAIData);
     } catch (e) {
       console.warn('AI content generation failed, using fallback:', e);
-      ai = getFallbackContent(scores, industry, language, customerName);
+      ai = fallbackContent;
     }
-    // Ensure ai has all required properties
+    
+    // Ensure ai has all required properties - use fallback for any missing/empty arrays
     ai = {
-      keyMessage: ai?.keyMessage || (language === 'de' ? 'AI Readiness Assessment' : 'AI Readiness Assessment'),
-      executiveSummary: ai?.executiveSummary || { headline: '', supportingPoints: [], bottomLine: '' },
-      situationAnalysis: ai?.situationAnalysis || { currentState: [], strengthsWeaknesses: { strengths: [], weaknesses: [] } },
-      gapAnalysis: ai?.gapAnalysis || { matrix: [], riskAssessment: [], opportunityCost: '' },
-      industryUseCases: ai?.industryUseCases || [],
-      recommendations: ai?.recommendations || { mustHave: [], shouldHave: [], couldHave: [] },
-      roadmap: ai?.roadmap || { phases: [] },
-      businessCase: ai?.businessCase || { totalInvestment: '', roi: '', paybackPeriod: '', riskOfInaction: '', competitiveImplication: '' },
-      valueProposition: ai?.valueProposition || [],
-      nextSteps: ai?.nextSteps || [],
+      keyMessage: ai?.keyMessage || fallbackContent.keyMessage,
+      executiveSummary: {
+        headline: ai?.executiveSummary?.headline || fallbackContent.executiveSummary.headline,
+        supportingPoints: (ai?.executiveSummary?.supportingPoints?.length > 0) 
+          ? ai.executiveSummary.supportingPoints 
+          : fallbackContent.executiveSummary.supportingPoints,
+        bottomLine: ai?.executiveSummary?.bottomLine || fallbackContent.executiveSummary.bottomLine,
+      },
+      situationAnalysis: {
+        currentState: (ai?.situationAnalysis?.currentState?.length > 0) 
+          ? ai.situationAnalysis.currentState 
+          : fallbackContent.situationAnalysis.currentState,
+        strengthsWeaknesses: {
+          strengths: (ai?.situationAnalysis?.strengthsWeaknesses?.strengths?.length > 0) 
+            ? ai.situationAnalysis.strengthsWeaknesses.strengths 
+            : fallbackContent.situationAnalysis.strengthsWeaknesses.strengths,
+          weaknesses: (ai?.situationAnalysis?.strengthsWeaknesses?.weaknesses?.length > 0) 
+            ? ai.situationAnalysis.strengthsWeaknesses.weaknesses 
+            : fallbackContent.situationAnalysis.strengthsWeaknesses.weaknesses,
+        },
+      },
+      gapAnalysis: {
+        matrix: (ai?.gapAnalysis?.matrix?.length > 0) 
+          ? ai.gapAnalysis.matrix 
+          : fallbackContent.gapAnalysis.matrix,
+        riskAssessment: (ai?.gapAnalysis?.riskAssessment?.length > 0) 
+          ? ai.gapAnalysis.riskAssessment 
+          : fallbackContent.gapAnalysis.riskAssessment,
+        opportunityCost: ai?.gapAnalysis?.opportunityCost || fallbackContent.gapAnalysis.opportunityCost,
+      },
+      industryUseCases: (ai?.industryUseCases?.length > 0) 
+        ? ai.industryUseCases 
+        : fallbackContent.industryUseCases,
+      recommendations: {
+        mustHave: (ai?.recommendations?.mustHave?.length > 0) 
+          ? ai.recommendations.mustHave 
+          : fallbackContent.recommendations.mustHave,
+        shouldHave: (ai?.recommendations?.shouldHave?.length > 0) 
+          ? ai.recommendations.shouldHave 
+          : fallbackContent.recommendations.shouldHave,
+        couldHave: (ai?.recommendations?.couldHave?.length > 0) 
+          ? ai.recommendations.couldHave 
+          : fallbackContent.recommendations.couldHave,
+      },
+      roadmap: {
+        phases: (ai?.roadmap?.phases?.length > 0) 
+          ? ai.roadmap.phases 
+          : fallbackContent.roadmap.phases,
+      },
+      businessCase: {
+        totalInvestment: ai?.businessCase?.totalInvestment || fallbackContent.businessCase.totalInvestment,
+        expectedBenefits: ai?.businessCase?.expectedBenefits || fallbackContent.businessCase.expectedBenefits,
+        roi: ai?.businessCase?.roi || fallbackContent.businessCase.roi,
+        paybackPeriod: ai?.businessCase?.paybackPeriod || fallbackContent.businessCase.paybackPeriod,
+        riskOfInaction: ai?.businessCase?.riskOfInaction || fallbackContent.businessCase.riskOfInaction,
+        competitiveImplication: ai?.businessCase?.competitiveImplication || fallbackContent.businessCase.competitiveImplication,
+      },
+      valueProposition: (ai?.valueProposition?.length > 0) 
+        ? ai.valueProposition 
+        : fallbackContent.valueProposition,
+      nextSteps: (ai?.nextSteps?.length > 0) 
+        ? ai.nextSteps 
+        : fallbackContent.nextSteps,
     };
+    
+    // Debug log to verify content
+    console.log('PowerPoint AI content:', {
+      currentStateCount: ai.situationAnalysis.currentState.length,
+      gapMatrixCount: ai.gapAnalysis.matrix.length,
+      useCasesCount: ai.industryUseCases.length,
+      phasesCount: ai.roadmap.phases.length,
+    });
     updateProgress(3, 23);
   
   // SLIDE 1: TITLE

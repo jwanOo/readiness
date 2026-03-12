@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
-import { INDUSTRIES } from '../lib/constants';
+import { INDUSTRIES, CORE_SECTIONS } from '../lib/constants';
 import { computeReadinessFromAnswers, calculateOverallScore } from '../lib/scoring';
 import {
   recognizeIntent,
@@ -481,6 +481,64 @@ export default function SectionAIPanel({
   };
 
   /**
+   * Get human-readable question text from a key like "general_0" or "landscape_2"
+   */
+  const getQuestionText = (key) => {
+    const [sectionId, questionIndexStr] = key.split('_');
+    const questionIndex = parseInt(questionIndexStr, 10);
+    
+    // Find the section in CORE_SECTIONS
+    const section = CORE_SECTIONS.find(s => s.id === sectionId);
+    if (section && section.questions[questionIndex]) {
+      return section.questions[questionIndex].q;
+    }
+    
+    // Fallback to the key if not found
+    return key;
+  };
+
+  /**
+   * Get section title from section ID
+   */
+  const getSectionTitleFromId = (sectionId) => {
+    const section = CORE_SECTIONS.find(s => s.id === sectionId);
+    return section?.title?.replace(/^[^\s]+\s/, '') || sectionId; // Remove emoji prefix
+  };
+
+  /**
+   * Format saved answers with human-readable labels, grouped by section
+   */
+  const formatSavedAnswersForContext = (savedAnswers) => {
+    if (!savedAnswers || Object.keys(savedAnswers).length === 0) {
+      return '(Noch keine Antworten in der Datenbank gespeichert)';
+    }
+
+    // Group answers by section
+    const bySection = {};
+    Object.entries(savedAnswers).forEach(([key, value]) => {
+      const [sectionId] = key.split('_');
+      if (!bySection[sectionId]) {
+        bySection[sectionId] = [];
+      }
+      bySection[sectionId].push({ key, value, question: getQuestionText(key) });
+    });
+
+    // Format output grouped by section
+    const lines = [];
+    Object.entries(bySection).forEach(([sectionId, answers]) => {
+      const sectionTitle = getSectionTitleFromId(sectionId);
+      lines.push(`\n**${sectionTitle}:**`);
+      answers.forEach(({ question, value }) => {
+        // Truncate long values
+        const displayValue = value.length > 100 ? value.substring(0, 100) + '...' : value;
+        lines.push(`  • ${question}: ${displayValue}`);
+      });
+    });
+
+    return lines.join('\n');
+  };
+
+  /**
    * Build RAG context string from database data
    */
   const buildRAGContext = () => {
@@ -505,9 +563,7 @@ DATENBANK-KONTEXT (Supabase - Stand: ${dbContext.lastRefresh}):
 • Zuletzt aktualisiert: ${current.updatedAt ? new Date(current.updatedAt).toLocaleDateString('de-DE') : 'k.A.'}
 
 ═══ GESPEICHERTE ANTWORTEN ═══
-${Object.entries(current.savedAnswers || {}).length > 0 
-  ? Object.entries(current.savedAnswers).map(([key, value]) => `• ${key}: ${value}`).join('\n')
-  : '(Noch keine Antworten in der Datenbank gespeichert)'}
+${formatSavedAnswersForContext(current.savedAnswers)}
 
 ═══ VERGLEICHSDATEN ═══
 • Gesamtanzahl anderer Assessments: ${comparison.totalAssessments}
@@ -547,8 +603,9 @@ ${Object.entries(comparison.byIndustry).map(([key, data]) =>
     const ragContext = buildRAGContext();
 
     if (language === 'en') {
-      return `You are an SAP AI consultant helping with an AI Readiness Assessment. You have access to the Supabase database with saved assessments and answers.
+      return `You are **Silava AI**, an expert SAP AI Readiness consultant from adesso. You provide precise, actionable insights based on real assessment data.
 
+═══ CONTEXT ═══
 Section: ${section?.title || 'Unknown'}
 ${customerName ? `Customer: ${customerName}` : ''}
 ${industry ? `Industry: ${industry.label}` : ''}
@@ -557,30 +614,53 @@ Current answers (in session):
 ${answersText || 'No answers yet'}
 
 ${ragContext ? `
-DATABASE CONTEXT (from Supabase):
+═══ DATABASE CONTEXT (Supabase) ═══
 ${ragContext}
 ` : ''}
 
-CAPABILITIES:
-1. Answer questions about the current assessment
-2. Compare with other assessments in the database
-3. Show saved answers and progress
-4. Provide industry benchmarks
-5. Give SAP-specific recommendations
+═══ RESPONSE FORMAT ═══
+Structure your responses clearly:
 
-INSTRUCTIONS:
-1. Use flowing text, NOT tables
-2. Use bullet points (•) for lists
-3. Keep paragraphs short (2-3 sentences)
-4. Ground answers in SAP official sources when relevant
-5. Reference database data when answering comparison questions
-6. End with "📚 Source:" section when relevant
+**For Comparison Questions:**
+1. **📊 Your Position** - State the customer's current score and ranking
+2. **📈 Industry Benchmark** - Show average scores in their industry
+3. **🎯 Gap Analysis** - Identify specific gaps (be precise with numbers)
+4. **💡 Top 3 Recommendations** - Actionable steps with expected impact
 
-Be concise and helpful. Answer in English.`;
+**For Recommendation Questions:**
+1. **🔍 Current State** - Brief assessment of where they stand
+2. **⚠️ Key Gaps** - Specific areas needing improvement
+3. **🚀 Action Plan** - Prioritized steps (Quick Wins → Strategic)
+4. **📅 Timeline** - Realistic implementation phases
+
+**For General Questions:**
+• Start with a direct answer
+• Provide supporting details
+• End with actionable next steps
+
+═══ GUIDELINES ═══
+• Be SPECIFIC - use actual numbers from the database
+• Be ACTIONABLE - every recommendation should be implementable
+• Be CONCISE - max 3-4 bullet points per section
+• Reference SAP best practices (Clean Core, RISE, BTP, Joule)
+• Compare against industry peers when data is available
+• Highlight quick wins vs. strategic initiatives
+
+═══ SAP EXPERTISE ═══
+You are an expert in:
+• SAP S/4HANA & Clean Core architecture
+• SAP BTP (Business Technology Platform)
+• SAP AI (Joule, AI Foundation, Business AI)
+• SAP Integration Suite & API Management
+• SAP Analytics Cloud & Data Intelligence
+• Industry-specific SAP solutions
+
+Always ground recommendations in SAP's official roadmap and best practices.`;
     }
 
-    return `Du bist ein SAP KI-Berater für AI Readiness Assessments. Du hast Zugriff auf die Supabase-Datenbank mit gespeicherten Assessments und Antworten.
+    return `Du bist **Silava AI**, ein erfahrener SAP AI Readiness Berater von adesso. Du lieferst präzise, umsetzbare Erkenntnisse basierend auf echten Assessment-Daten.
 
+═══ KONTEXT ═══
 Abschnitt: ${section?.title || 'Unbekannt'}
 ${customerName ? `Kunde: ${customerName}` : ''}
 ${industry ? `Branche: ${industry.label}` : ''}
@@ -589,26 +669,48 @@ Aktuelle Antworten (in der Session):
 ${answersText || 'Noch keine Antworten'}
 
 ${ragContext ? `
-DATENBANK-KONTEXT (aus Supabase):
+═══ DATENBANK-KONTEXT (Supabase) ═══
 ${ragContext}
 ` : ''}
 
-FÄHIGKEITEN:
-1. Fragen zum aktuellen Assessment beantworten
-2. Mit anderen Assessments in der Datenbank vergleichen
-3. Gespeicherte Antworten und Fortschritt anzeigen
-4. Branchen-Benchmarks liefern
-5. SAP-spezifische Empfehlungen geben
+═══ ANTWORT-FORMAT ═══
+Strukturiere deine Antworten klar:
 
-ANWEISUNGEN:
-1. Verwende Fließtext, KEINE Tabellen
-2. Verwende Aufzählungspunkte (•) für Listen
-3. Halte Absätze kurz (2-3 Sätze)
-4. Basiere Antworten auf SAP-Quellen wenn relevant
-5. Referenziere Datenbankdaten bei Vergleichsfragen
-6. Ende mit "📚 Quelle:" Abschnitt wenn relevant
+**Bei Vergleichsfragen:**
+1. **📊 Ihre Position** - Aktueller Score und Ranking des Kunden
+2. **📈 Branchen-Benchmark** - Durchschnittswerte in der Branche
+3. **🎯 Gap-Analyse** - Spezifische Lücken (mit konkreten Zahlen)
+4. **💡 Top 3 Empfehlungen** - Umsetzbare Schritte mit erwartetem Impact
 
-Sei prägnant und hilfreich. Antworte auf Deutsch.`;
+**Bei Empfehlungsfragen:**
+1. **🔍 Ist-Zustand** - Kurze Bewertung der aktuellen Situation
+2. **⚠️ Kernlücken** - Spezifische Verbesserungsbereiche
+3. **🚀 Aktionsplan** - Priorisierte Schritte (Quick Wins → Strategisch)
+4. **📅 Zeitplan** - Realistische Umsetzungsphasen
+
+**Bei allgemeinen Fragen:**
+• Beginne mit einer direkten Antwort
+• Liefere unterstützende Details
+• Ende mit umsetzbaren nächsten Schritten
+
+═══ RICHTLINIEN ═══
+• Sei SPEZIFISCH - nutze echte Zahlen aus der Datenbank
+• Sei UMSETZBAR - jede Empfehlung muss implementierbar sein
+• Sei PRÄGNANT - max. 3-4 Aufzählungspunkte pro Abschnitt
+• Referenziere SAP Best Practices (Clean Core, RISE, BTP, Joule)
+• Vergleiche mit Branchenkollegen wenn Daten verfügbar
+• Unterscheide Quick Wins von strategischen Initiativen
+
+═══ SAP EXPERTISE ═══
+Du bist Experte für:
+• SAP S/4HANA & Clean Core Architektur
+• SAP BTP (Business Technology Platform)
+• SAP AI (Joule, AI Foundation, Business AI)
+• SAP Integration Suite & API Management
+• SAP Analytics Cloud & Data Intelligence
+• Branchenspezifische SAP-Lösungen
+
+Basiere Empfehlungen immer auf SAPs offizieller Roadmap und Best Practices.`;
   };
 
   // State for action handling
@@ -1535,9 +1637,163 @@ Sei prägnant und hilfreich. Antworte auf Deutsch.`;
         )}
       </div>
 
+      {/* Suggested Actions - Always visible */}
+      <div style={{
+        padding: '8px 16px',
+        borderTop: '1px solid #E8EDF2',
+        background: '#FAFBFC',
+      }}>
+        <div style={{ fontSize: 10, fontWeight: 600, color: '#95A5A6', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+          {language === 'de' ? '⚡ Schnellaktionen' : '⚡ Quick Actions'}
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          {/* Export Actions */}
+          {onExport && (
+            <>
+              <button
+                onClick={() => handleActionClick({ type: 'export', format: 'pdf' })}
+                disabled={chatLoading}
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: 16,
+                  border: '1px solid #E8EDF2',
+                  background: '#fff',
+                  color: '#E74C3C',
+                  fontSize: 11,
+                  fontWeight: 500,
+                  cursor: chatLoading ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  transition: 'all 0.2s',
+                }}
+                onMouseOver={(e) => { e.currentTarget.style.background = '#FDEDEC'; e.currentTarget.style.borderColor = '#E74C3C'; }}
+                onMouseOut={(e) => { e.currentTarget.style.background = '#fff'; e.currentTarget.style.borderColor = '#E8EDF2'; }}
+              >
+                📄 PDF
+              </button>
+              <button
+                onClick={() => handleActionClick({ type: 'export', format: 'pptx' })}
+                disabled={chatLoading}
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: 16,
+                  border: '1px solid #E8EDF2',
+                  background: '#fff',
+                  color: '#E67E22',
+                  fontSize: 11,
+                  fontWeight: 500,
+                  cursor: chatLoading ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  transition: 'all 0.2s',
+                }}
+                onMouseOver={(e) => { e.currentTarget.style.background = '#FEF5E7'; e.currentTarget.style.borderColor = '#E67E22'; }}
+                onMouseOut={(e) => { e.currentTarget.style.background = '#fff'; e.currentTarget.style.borderColor = '#E8EDF2'; }}
+              >
+                📊 PowerPoint
+              </button>
+            </>
+          )}
+          {/* Navigation Actions */}
+          {onNavigate && (
+            <button
+              onClick={() => handleActionClick({ type: 'navigate', target: 'analytics' })}
+              disabled={chatLoading}
+              style={{
+                padding: '6px 12px',
+                borderRadius: 16,
+                border: '1px solid #E8EDF2',
+                background: '#fff',
+                color: '#2E86C1',
+                fontSize: 11,
+                fontWeight: 500,
+                cursor: chatLoading ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
+                transition: 'all 0.2s',
+              }}
+              onMouseOver={(e) => { e.currentTarget.style.background = '#EBF5FB'; e.currentTarget.style.borderColor = '#2E86C1'; }}
+              onMouseOut={(e) => { e.currentTarget.style.background = '#fff'; e.currentTarget.style.borderColor = '#E8EDF2'; }}
+            >
+              📈 Analytics
+            </button>
+          )}
+          {/* Refresh DB */}
+          <button
+            onClick={handleRefreshDb}
+            disabled={dbLoading}
+            style={{
+              padding: '6px 12px',
+              borderRadius: 16,
+              border: '1px solid #E8EDF2',
+              background: '#fff',
+              color: '#27AE60',
+              fontSize: 11,
+              fontWeight: 500,
+              cursor: dbLoading ? 'not-allowed' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+              transition: 'all 0.2s',
+              opacity: dbLoading ? 0.6 : 1,
+            }}
+            onMouseOver={(e) => { if (!dbLoading) { e.currentTarget.style.background = '#EAFAF1'; e.currentTarget.style.borderColor = '#27AE60'; }}}
+            onMouseOut={(e) => { e.currentTarget.style.background = '#fff'; e.currentTarget.style.borderColor = '#E8EDF2'; }}
+          >
+            🔄 {language === 'de' ? 'DB aktualisieren' : 'Refresh DB'}
+          </button>
+        </div>
+      </div>
+
+      {/* Prompt Suggestions - Always visible */}
+      <div style={{
+        padding: '8px 16px',
+        background: '#fff',
+        borderTop: '1px solid #F0F3F4',
+      }}>
+        <div style={{ fontSize: 10, fontWeight: 600, color: '#95A5A6', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+          {language === 'de' ? '💡 Vorschläge' : '💡 Suggestions'}
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          {(language === 'de' ? [
+            'Wie ist mein Score?',
+            'Vergleiche mich',
+            'Was fehlt mir?',
+            'Was habe ich gespeichert?',
+          ] : [
+            'What is my score?',
+            'Compare me',
+            'What am I missing?',
+            'What have I saved?',
+          ]).map((suggestion, i) => (
+            <button
+              key={i}
+              onClick={() => setChatInput(suggestion)}
+              style={{
+                padding: '5px 10px',
+                borderRadius: 12,
+                border: '1px solid #E8EDF2',
+                background: '#F7F9FC',
+                color: '#5D6D7E',
+                fontSize: 11,
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+              }}
+              onMouseOver={(e) => { e.currentTarget.style.background = '#EBF5FB'; e.currentTarget.style.borderColor = '#2E86C1'; e.currentTarget.style.color = '#2E86C1'; }}
+              onMouseOut={(e) => { e.currentTarget.style.background = '#F7F9FC'; e.currentTarget.style.borderColor = '#E8EDF2'; e.currentTarget.style.color = '#5D6D7E'; }}
+            >
+              {suggestion}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Input */}
       <div style={{
-        padding: 16,
+        padding: '12px 16px',
         borderTop: '1px solid #E8EDF2',
         display: 'flex',
         gap: 12,

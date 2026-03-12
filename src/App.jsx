@@ -8,6 +8,7 @@ import Login from './components/Login';
 import Dashboard from './components/Dashboard';
 import AIReadinessCheck from './components/AIReadinessCheck';
 import Analytics from './components/Analytics';
+import { AICatalog } from './components/AICatalog';
 
 // Wrapper component to load assessment by ID from URL
 function AssessmentWrapper() {
@@ -361,6 +362,12 @@ function AppContent() {
             }}
           />
         } 
+      />
+      
+      {/* SAP AI Catalog - Agents Discovery Integration */}
+      <Route 
+        path="/ai-catalog" 
+        element={<AICatalog />} 
       />
       
       {/* New Assessment Page (no ID) */}

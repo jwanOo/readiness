@@ -779,6 +779,32 @@ ${answers.length > 0 ? answers.map(a => `
             <div style={{ fontSize: 14, fontWeight: 700, color: '#fff' }}>{txt.analytics}</div>
             <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.8)' }}>{txt.compareCustomers}</div>
           </Link>
+          
+          {/* SAP AI Catalog Button */}
+          <Link 
+            to="/ai-catalog"
+            style={{ 
+              background: 'linear-gradient(135deg, #E67E22 0%, #F39C12 100%)', 
+              borderRadius: 12, 
+              padding: 20, 
+              cursor: 'pointer',
+              transition: 'all 0.2s',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'center',
+              textDecoration: 'none'
+            }}
+            onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
+            onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+          >
+            <div style={{ fontSize: 28, marginBottom: 4 }}>🤖</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#fff' }}>
+              {language === 'en' ? 'AI Catalog' : 'AI Katalog'}
+            </div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.8)' }}>
+              {language === 'en' ? 'SAP AI Use Cases' : 'SAP AI Use Cases'}
+            </div>
+          </Link>
         </div>
 
         {/* Actions */}
