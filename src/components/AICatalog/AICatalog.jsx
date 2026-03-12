@@ -85,11 +85,11 @@ export default function AICatalog() {
   async function loadSyncStatus() {
     const status = await getLatestSyncStatus();
     setSyncStatus(status);
-    
+
     // Also check if sync server is online
     const serverStatus = await getSyncStatus();
     setSyncServerOnline(serverStatus !== null);
-    
+
     // If server has CSV info, use that for display
     if (serverStatus?.csvFile?.exists) {
       setSyncStatus(prev => ({
@@ -98,6 +98,9 @@ export default function AICatalog() {
       }));
     }
   }
+
+  // Check if running in production (GitHub Pages)
+  const isProduction = import.meta.env.PROD;
   
   async function handleSync() {
     setSyncing(true);
@@ -235,36 +238,64 @@ export default function AICatalog() {
         </div>
         
         <div className="ai-catalog-actions">
-          <button 
-            className={`sync-button ${syncing ? 'syncing' : ''}`}
-            onClick={handleSync}
-            disabled={syncing}
-            title={syncServerOnline === false 
-              ? (language === 'de' ? 'Sync-Server offline' : 'Sync server offline')
-              : (language === 'de' ? 'Daten von SAP aktualisieren' : 'Update data from SAP')}
-          >
-            {syncing ? (
-              <>
-                <span className="sync-spinner">🔄</span>
-                {language === 'de' ? ' Synchronisiere...' : ' Syncing...'}
-              </>
-            ) : (
-              <>🔄 {language === 'de' ? 'Sync von SAP' : 'Sync from SAP'}</>
-            )}
-          </button>
-          
-          {syncServerOnline === false && (
-            <span className="sync-server-warning" title="npm run sync-server">
-              ⚠️ {language === 'de' ? 'Server offline' : 'Server offline'}
-            </span>
+          {/* Show sync button only in development OR if server is online */}
+          {!isProduction && (
+            <>
+              <button
+                className={`sync-button ${syncing ? 'syncing' : ''}`}
+                onClick={handleSync}
+                disabled={syncing}
+                title={syncServerOnline === false
+                  ? (language === 'de' ? 'Sync-Server offline' : 'Sync server offline')
+                  : (language === 'de' ? 'Daten von SAP aktualisieren' : 'Update data from SAP')}
+              >
+                {syncing ? (
+                  <>
+                    <span className="sync-spinner">🔄</span>
+                    {language === 'de' ? ' Synchronisiere...' : ' Syncing...'}
+                  </>
+                ) : (
+                  <>🔄 {language === 'de' ? 'Sync von SAP' : 'Sync from SAP'}</>
+                )}
+              </button>
+
+              {syncServerOnline === false && (
+                <span className="sync-server-warning" title="npm run dev">
+                  ⚠️ {language === 'de' ? 'Server offline' : 'Server offline'}
+                </span>
+              )}
+            </>
           )}
-          
+
+          {/* Production: Show GitHub Actions sync info */}
+          {isProduction && (
+            <div className="production-sync-info">
+              <span className="sync-info-badge">
+                🤖 {language === 'de' ? 'Automatischer Sync' : 'Automatic Sync'}
+              </span>
+              <span className="sync-info-text">
+                {language === 'de'
+                  ? 'Daten werden täglich um 15:00 UTC aktualisiert'
+                  : 'Data updated daily at 15:00 UTC'}
+              </span>
+              <a
+                href="https://github.com/jwanOo/ai-readiness-check/actions/workflows/sync-sap-catalog.yml"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="manual-sync-link"
+                title={language === 'de' ? 'Manuellen Sync auslösen' : 'Trigger manual sync'}
+              >
+                {language === 'de' ? '▶ Jetzt synchronisieren' : '▶ Sync now'}
+              </a>
+            </div>
+          )}
+
           {syncProgress && (
             <span className="sync-progress">
               {syncProgress}
             </span>
           )}
-          
+
           {!syncProgress && syncStatus?.csvInfo && (
             <span className="sync-status">
               {language === 'de' ? 'CSV: ' : 'CSV: '}
@@ -274,7 +305,7 @@ export default function AICatalog() {
               )}
             </span>
           )}
-          
+
           {!syncProgress && !syncStatus?.csvInfo && syncStatus?.sync_completed_at && (
             <span className="sync-status">
               {language === 'de' ? 'Letzter Sync: ' : 'Last sync: '}
