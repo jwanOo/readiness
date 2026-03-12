@@ -405,8 +405,13 @@ function AppContent() {
 
 // Root App with Auth Provider, Language Provider, and Router
 export default function App() {
+  // Use import.meta.env.BASE_URL to match vite.config.js base setting
+  // In dev: '/' or '/readiness/' depending on config
+  // In production: '/readiness/' (from vite.config.js)
+  const basename = import.meta.env.BASE_URL || '/';
+  
   return (
-    <BrowserRouter basename="/ai-readiness-check/">
+    <BrowserRouter basename={basename}>
       <LanguageProvider>
         <AuthProvider>
           <AppContent />
