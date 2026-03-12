@@ -9,5 +9,7 @@ export default defineConfig(({ mode }) => ({
     // Only load sync plugin in development
     mode === 'development' ? sapSyncPlugin() : null,
   ].filter(Boolean),
-  base: '/readiness/', // Match package.json homepage
+  // Base path must match the GitHub repo name for GitHub Pages
+  // URL: https://jwanOo.github.io/ai-readiness-check/
+  base: '/ai-readiness-check/',
 }))
