@@ -429,7 +429,7 @@ const SYNC_API_URL = import.meta.env.VITE_SYNC_API_URL || '';
  * GitHub repository info for fetching latest CSV
  */
 const GITHUB_REPO_OWNER = import.meta.env.VITE_GITHUB_REPO_OWNER || 'jwanOo';
-const GITHUB_REPO_NAME = import.meta.env.VITE_GITHUB_REPO_NAME || 'readiness';
+const GITHUB_REPO_NAME = import.meta.env.VITE_GITHUB_REPO_NAME || 'ai-readiness-check';
 const GITHUB_CSV_PATH = 'public/sap_ai_data.csv';
 const GITHUB_RAW_URL = `https://raw.githubusercontent.com/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/main/${GITHUB_CSV_PATH}`;
 
