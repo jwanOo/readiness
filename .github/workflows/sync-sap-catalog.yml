@@ -12,6 +12,10 @@ on:
   repository_dispatch:
     types: [sync-sap-catalog]
 
+# Grant write permissions to push changes
+permissions:
+  contents: write
+
 jobs:
   sync:
     runs-on: ubuntu-latest
