@@ -1,25 +1,56 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Environment variables (NEVER commit these!)
+.env
+.env.local
+.env.production
+.env.*.local
+
 # Logs
-logs
+logs/
 *.log
 npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
-*.local
-
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
+# OS files
 .DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
-.env
+._*
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Documentation files (keep only essential ones)
+test-agents-filter.html
+AGENTS_FILTER_SOLUTION.md
+SAP_AGENTS_SYNC_FIXED.md
+SYNC_BUTTON_FIXED.md
+SYNC_FROM_SAP_GUIDE.md
+SYNC_QUICK_GUIDE.txt
+QUICK_START_SYNC.txt
+DEPLOY_QUICK_START.txt
+
+# Temporary/duplicate files
+sap_ai_data.csv
+Architecture_Security_Review.docx
+scripts/security-remediation.sh
+scripts/sync-sap-ai-catalog.sh
+
+# Agents Discovery temp files
+"Agents Discovery/app.txt"
+"Agents Discovery/downloader.txt"
+"Agents Discovery/mein_sap_tracking.csv"
+"Agents Discovery/sap_ai_config.json"
+"Agents Discovery/sap_ai_raw_data.csv"
+
+# Coverage
+coverage/
+
+# Screenshots
+*.png
+*.md
